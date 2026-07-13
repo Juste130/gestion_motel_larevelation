@@ -1,0 +1,98 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String   @unique
+  password  String
+  role      String   @default("RECEPTIONIST") // ADMIN, DG, RECEPTIONIST
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  entries   Entry[]
+}
+
+model Room {
+  id        String   @id @default(cuid())
+  num       String   @unique
+  type      String   // V (VIP), C (Confort), A (Appart)
+  label     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Drink {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  price     Float
+  stock     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  entries   EntryDrink[]
+}
+
+model Entry {
+  id           String   @id @default(cuid())
+  receiptNo    String?
+  roomNum      String
+  roomType     String
+  roomTypeLabel String
+  arrival      String?
+  departure    String?
+  duration     String?
+  roomAmount   Float    @default(0)
+  condomAmount Float    @default(0)
+  drinksAmount Float    @default(0)
+  total        Float    @default(0)
+  
+  date         String   // YYYY-MM-DD for easy filtering
+  
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  drinks       EntryDrink[]
+}
+
+model EntryDrink {
+  id        String @id @default(cuid())
+  qty       Int
+  price     Float
+  
+  entryId   String
+  entry     Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  
+  drinkId   String
+  drink     Drink  @relation(fields: [drinkId], references: [id])
+}
+
+model CashMovement {
+  id        String   @id @default(cuid())
+  label     String
+  amount    Float
+  type      String   // 'depense' or 'recette'
+  date      String   // YYYY-MM-DD
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String   // 'CREATE_ENTRY', 'UPDATE_ENTRY', 'DELETE_ENTRY'
+  entityId  String
+  details   String
+  userId    String
+  createdAt DateTime @default(now())
+}
