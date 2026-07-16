@@ -1,19 +1,10 @@
-import { getServerSession } from "next-auth/next"
-import { redirect } from "next/navigation"
-import { authOptions } from "@/lib/auth"
+import { requireSession, getRole } from "@/lib/session"
+import { getResumeStats } from "@/app/actions/admin"
+import { DashboardClient } from "./client"
 
-export default async function DashboardIndex() {
-  const session = await getServerSession(authOptions)
-  
-  if (!session) {
-    redirect("/")
-  }
-
-  const role = (session.user as any)?.role
-
-  if (role === "DG" || role === "ADMIN") {
-    redirect("/dashboard/admin")
-  } else {
-    redirect("/dashboard/reception")
-  }
+export default async function DashboardPage() {
+  const session = await requireSession()
+  const role = getRole(session)
+  const stats = await getResumeStats()
+  return <DashboardClient stats={stats} role={role} />
 }

@@ -13,17 +13,11 @@ async function getSessionAndUser() {
 
 export async function getEntries(date: string) {
   // date in YYYY-MM-DD
-  const session = await getSessionAndUser()
-  const role = (session.user as any)?.role
-
-  // By default fetch for this date. 
-  // If we wanted to restrict Receptionist to only see their own, we could do it here.
-  // But usually, they see the whole day's registry like a physical book.
   const entries = await prisma.entry.findMany({
     where: { date },
     include: {
-      drinks: {
-        include: { drink: true }
+      products: {
+        include: { product: true }
       },
       user: {
         select: { name: true, email: true }
@@ -45,59 +39,85 @@ export async function addEntry(data: {
   duration?: string
   roomAmount: number
   condomAmount: number
-  drinks: { id: string; qty: number; price: number }[]
+  products: { id: string; qty: number; price: number }[]
 }) {
   const session = await getSessionAndUser()
   const userId = (session.user as any)?.id
 
-  const drinksAmount = data.drinks.reduce((acc, d) => acc + (d.qty * d.price), 0)
-  const total = data.roomAmount + data.condomAmount + drinksAmount
+  const entry = await prisma.$transaction(async (tx) => {
+    const productIds = data.products.map(p => p.id)
+    const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
+    
+    let productsAmount = 0
+    const entryProductsData = []
 
-  const entry = await prisma.entry.create({
-    data: {
-      date: data.date,
-      receiptNo: data.receiptNo,
-      roomNum: data.roomNum,
-      roomType: data.roomType,
-      roomTypeLabel: data.roomTypeLabel,
-      arrival: data.arrival,
-      departure: data.departure,
-      duration: data.duration,
-      roomAmount: data.roomAmount,
-      condomAmount: data.condomAmount,
-      drinksAmount,
-      total,
-      userId,
-      drinks: {
-        create: data.drinks.map(d => ({
-          qty: d.qty,
-          price: d.price,
-          drinkId: d.id
-        }))
+    for (const p of data.products) {
+      const dbProduct = dbProducts.find(x => x.id === p.id)
+      if (!dbProduct) throw new Error("Produit introuvable")
+      
+      const price = dbProduct.price // Prix sécurisé depuis la BDD
+      productsAmount += price * p.qty
+      
+      entryProductsData.push({
+        qty: p.qty,
+        price: price,
+        productId: p.id
+      })
+
+      await tx.product.update({
+        where: { id: p.id },
+        data: { stock: { decrement: p.qty } }
+      })
+
+      await tx.stockMovement.create({
+        data: {
+          type: "OUT",
+          qty: p.qty,
+          price: price,
+          motif: `Séjour ch. ${data.roomNum}`,
+          date: data.date,
+          productId: p.id,
+          userId
+        }
+      })
+    }
+
+    const total = data.roomAmount + data.condomAmount + productsAmount
+
+    const newEntry = await tx.entry.create({
+      data: {
+        date: data.date,
+        receiptNo: data.receiptNo,
+        roomNum: data.roomNum,
+        roomType: data.roomType,
+        roomTypeLabel: data.roomTypeLabel,
+        arrival: data.arrival,
+        departure: data.departure,
+        duration: data.duration,
+        roomAmount: data.roomAmount,
+        condomAmount: data.condomAmount,
+        drinksAmount: productsAmount,
+        total,
+        userId,
+        products: {
+          create: entryProductsData
+        }
       }
-    }
-  })
-
-  // Decrement stock
-  for (const d of data.drinks) {
-    await prisma.drink.update({
-      where: { id: d.id },
-      data: { stock: { decrement: d.qty } }
     })
-  }
 
-  // Audit Log
-  await prisma.auditLog.create({
-    data: {
-      action: 'CREATE_ENTRY',
-      entityId: entry.id,
-      details: `Création du séjour ch. ${entry.roomNum}`,
-      userId,
-    }
+    await tx.auditLog.create({
+      data: {
+        action: 'CREATE_ENTRY',
+        entityId: newEntry.id,
+        details: `Création du séjour ch. ${newEntry.roomNum}`,
+        userId,
+      }
+    })
+
+    return newEntry
   })
 
-  revalidatePath('/dashboard/reception')
-  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard', 'layout')
   return entry
 }
 
@@ -105,7 +125,6 @@ export async function updateDeparture(entryId: string, departure: string, durati
   const session = await getSessionAndUser()
   const userId = (session.user as any)?.id
 
-  // Anyone (Receptionist) can update the departure time
   const updated = await prisma.entry.update({
     where: { id: entryId },
     data: { departure, duration }
@@ -120,7 +139,7 @@ export async function updateDeparture(entryId: string, departure: string, durati
     }
   })
 
-  revalidatePath('/dashboard/reception')
+  revalidatePath('/dashboard', 'layout')
   return updated
 }
 
@@ -134,34 +153,45 @@ export async function deleteEntry(entryId: string) {
     throw new Error("Seule la direction peut supprimer un enregistrement.")
   }
 
-  // Restore stock before delete
-  const entry = await prisma.entry.findUnique({
-    where: { id: entryId },
-    include: { drinks: true }
-  })
+  await prisma.$transaction(async (tx) => {
+    // Restore stock before delete
+    const entry = await tx.entry.findUnique({
+      where: { id: entryId },
+      include: { products: true }
+    })
 
-  if (entry) {
-    for (const d of entry.drinks) {
-      await prisma.drink.update({
-        where: { id: d.drinkId },
-        data: { stock: { increment: d.qty } }
+    if (entry) {
+      for (const p of entry.products) {
+        await tx.product.update({
+          where: { id: p.productId },
+          data: { stock: { increment: p.qty } }
+        })
+        await tx.stockMovement.create({
+          data: {
+            type: "IN",
+            qty: p.qty,
+            motif: `Annulation séjour ch. ${entry.roomNum}`,
+            date: entry.date,
+            productId: p.productId,
+            userId
+          }
+        })
+      }
+
+      await tx.entry.delete({
+        where: { id: entryId }
+      })
+
+      await tx.auditLog.create({
+        data: {
+          action: 'DELETE_ENTRY',
+          entityId: entryId,
+          details: `Suppression du séjour ch. ${entry.roomNum}`,
+          userId,
+        }
       })
     }
-  }
-
-  await prisma.entry.delete({
-    where: { id: entryId }
   })
 
-  await prisma.auditLog.create({
-    data: {
-      action: 'DELETE_ENTRY',
-      entityId: entryId,
-      details: `Suppression du séjour ch. ${entry?.roomNum}`,
-      userId,
-    }
-  })
-
-  revalidatePath('/dashboard/reception')
-  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard', 'layout')
 }

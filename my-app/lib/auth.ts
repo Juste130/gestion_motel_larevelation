@@ -1,7 +1,31 @@
-import { NextAuthOptions } from "next-auth";
+import { NextAuthOptions, Session, User } from "next-auth";
+import { JWT } from "next-auth/jwt";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
+
+// Extend next-auth types to include role and id
+declare module "next-auth" {
+  interface User {
+    role?: string;
+  }
+  interface Session {
+    user: {
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+      id?: string;
+      role?: string;
+    };
+  }
+}
+
+declare module "next-auth/jwt" {
+  interface JWT {
+    role?: string;
+    id?: string;
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -17,7 +41,7 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email", placeholder: "vous@exemple.com" },
         password: { label: "Mot de passe", type: "password" }
       },
-      async authorize(credentials) {
+      async authorize(credentials): Promise<User | null> {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
@@ -51,17 +75,17 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: { token: JWT; user?: User }) {
       if (user) {
         token.role = user.role;
         token.id = user.id;
       }
       return token;
     },
-    async session({ session, token }) {
+    async session({ session, token }: { session: Session; token: JWT }) {
       if (token && session.user) {
-        (session.user as any).role = token.role;
-        (session.user as any).id = token.id;
+        session.user.role = token.role;
+        session.user.id = token.id;
       }
       return session;
     }

@@ -12,7 +12,7 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
   const [roomNum, setRoomNum] = useState(rooms[0]?.num || "")
   const [arrival, setArrival] = useState("")
   const [departure, setDeparture] = useState("")
-  const [roomAmount, setRoomAmount] = useState("")
+  const [roomAmount, setRoomAmount] = useState(rooms[0]?.price?.toString() || "")
   const [condomAmount, setCondomAmount] = useState("")
   const [selectedDrinks, setSelectedDrinks] = useState<any[]>([])
   const [drinkPick, setDrinkPick] = useState(drinks[0]?.id || "")
@@ -84,7 +84,12 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
             <Label>Chambre</Label>
             <select 
               value={roomNum} 
-              onChange={(e) => setRoomNum(e.target.value)} 
+              onChange={(e) => {
+                const newNum = e.target.value
+                setRoomNum(newNum)
+                const r = rooms.find((x: any) => x.num === newNum)
+                if (r && r.price !== undefined) setRoomAmount(r.price.toString())
+              }} 
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {rooms.map((r: any) => (

@@ -1,24 +1,13 @@
-import { getServerSession } from "next-auth/next"
-import { redirect } from "next/navigation"
-import { authOptions } from "@/lib/auth"
 import { SidebarLayout } from "@/components/sidebar-layout"
+import { requireSession, getRole } from "@/lib/session"
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const session = await getServerSession(authOptions)
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const session = await requireSession()
 
-  if (!session) {
-    redirect("/")
-  }
-
-  const role = (session.user as any)?.role
   const user = {
     name: session.user?.name || "",
     email: session.user?.email || "",
-    role,
+    role: getRole(session),
   }
 
   return <SidebarLayout user={user}>{children}</SidebarLayout>

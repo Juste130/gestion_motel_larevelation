@@ -18,7 +18,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
-  entries   Entry[]
+  entries        Entry[]
+  cashMovements  CashMovement[]
+  stockMovements StockMovement[]
+  closures       Closure[] @relation("ClosureUser")
+  validations    Closure[] @relation("ClosureValidator")
 }
 
 model Room {
@@ -26,19 +30,22 @@ model Room {
   num       String   @unique
   type      String   // V (VIP), C (Confort), A (Appart)
   label     String
+  price     Float    @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Drink {
+model Product {
   id        String   @id @default(cuid())
   name      String   @unique
+  category  String   @default("DRINK") // DRINK, CONDOM
   price     Float
   stock     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
-  entries   EntryDrink[]
+  entries   EntryProduct[]
+  movements StockMovement[]
 }
 
 model Entry {
@@ -60,13 +67,16 @@ model Entry {
   userId       String?
   user         User?    @relation(fields: [userId], references: [id])
   
+  closureId    String?
+  closure      Closure? @relation(fields: [closureId], references: [id])
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  drinks       EntryDrink[]
+  products     EntryProduct[]
 }
 
-model EntryDrink {
+model EntryProduct {
   id        String @id @default(cuid())
   qty       Int
   price     Float
@@ -74,8 +84,8 @@ model EntryDrink {
   entryId   String
   entry     Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
   
-  drinkId   String
-  drink     Drink  @relation(fields: [drinkId], references: [id])
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
 }
 
 model CashMovement {
@@ -84,8 +94,57 @@ model CashMovement {
   amount    Float
   type      String   // 'depense' or 'recette'
   date      String   // YYYY-MM-DD
+  
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  closureId String?
+  closure   Closure? @relation(fields: [closureId], references: [id])
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  type      String   // 'IN' or 'OUT'
+  qty       Int
+  price     Float?
+  motif     String?  // Obligatoire pour 'OUT'
+  date      String   // YYYY-MM-DD
+  
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Closure {
+  id             String   @id @default(cuid())
+  date           String   // YYYY-MM-DD ou 'YYYY-Wxx'
+  type           String   // 'DAILY' or 'WEEKLY'
+  
+  userId         String
+  user           User     @relation("ClosureUser", fields: [userId], references: [id])
+  
+  expectedAmount Float
+  handedAmount   Float?
+  discrepancy    Float?
+  comments       String?
+  status         String   @default("PENDING") // PENDING, VALIDATED
+  
+  validatedById  String?
+  validatedBy    User?    @relation("ClosureValidator", fields: [validatedById], references: [id])
+  
+  entries        Entry[]
+  cashMovements  CashMovement[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model AuditLog {

@@ -4,40 +4,55 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  BedDouble, TrendingUp, Wallet, Wine, Settings,
-  ShieldCheck, LogOut, Menu, X, ChevronRight
+  LayoutDashboard, Wallet, Package, Settings,
+  Users, BarChart2, LogOut, Menu, ChevronRight, ChevronLeft, BookOpen
 } from "lucide-react"
+import { signOut } from "next-auth/react"
 
 interface SidebarLayoutProps {
   user: { name: string; email: string; role: string }
   children: React.ReactNode
 }
 
-const NAV_RECEPTION = [
-  { href: "/dashboard/reception", label: "Registre", icon: BedDouble },
+type NavItem = {
+  href: string
+  label: string
+  icon: React.ComponentType<{ size?: number; className?: string }>
+  roles: string[]
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/dashboard",         label: "Tableau de bord",    icon: LayoutDashboard, roles: ["ADMIN", "DG", "RECEPTIONIST"] },
+  { href: "/dashboard/registre",label: "Registre & Séjours", icon: BookOpen,        roles: ["ADMIN", "DG", "RECEPTIONIST"] },
+  { href: "/dashboard/finances",label: "Recettes & Dépenses",icon: Wallet,           roles: ["ADMIN", "DG", "RECEPTIONIST"] },
+  { href: "/dashboard/stock",   label: "Stock",              icon: Package,          roles: ["ADMIN", "DG", "RECEPTIONIST"] },
+  { href: "/dashboard/params",  label: "Paramètres",         icon: Settings,         roles: ["ADMIN", "DG", "RECEPTIONIST"] },
+  { href: "/dashboard/users",   label: "Équipe",             icon: Users,            roles: ["ADMIN", "DG"] },
+  { href: "/dashboard/bilans",  label: "Bilans & Clôtures",  icon: BarChart2,        roles: ["ADMIN", "DG", "RECEPTIONIST"] },
 ]
 
-const NAV_ADMIN = [
-  { href: "/dashboard/admin", label: "Résumé", icon: TrendingUp },
-  { href: "/dashboard/admin?tab=caisse", label: "Caisse", icon: Wallet },
-  { href: "/dashboard/admin?tab=stock", label: "Stock boissons", icon: Wine },
-  { href: "/dashboard/admin?tab=params", label: "Paramètres", icon: Settings },
-  { href: "/dashboard/admin?tab=users", label: "Équipe", icon: ShieldCheck },
-]
-
-function NavLink({ href, label, icon: Icon, active }: any) {
+function NavLink({ href, label, icon: Icon, active, collapsed }: {
+  href: string; label: string; icon: NavItem["icon"]; active: boolean; collapsed: boolean
+}) {
   return (
     <Link
       href={href}
-      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-[15px] font-medium transition-all ${
+      title={collapsed ? label : undefined}
+      className={`flex items-center gap-3 py-2.5 rounded-xl text-[15px] font-medium transition-all duration-150 ${
+        collapsed ? "justify-center px-0 mx-2" : "px-4"
+      } ${
         active
           ? "bg-amber-50 text-amber-700 font-semibold"
           : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
       }`}
     >
-      <Icon size={18} className={active ? "text-amber-600" : "text-zinc-400"} />
-      {label}
-      {active && <ChevronRight size={14} className="ml-auto text-amber-400" />}
+      <Icon size={18} className={`flex-shrink-0 ${active ? "text-amber-600" : "text-zinc-400"}`} />
+      {!collapsed && (
+        <>
+          <span className="truncate">{label}</span>
+          {active && <ChevronRight size={14} className="ml-auto text-amber-400 flex-shrink-0" />}
+        </>
+      )}
     </Link>
   )
 }
@@ -45,107 +60,129 @@ function NavLink({ href, label, icon: Icon, active }: any) {
 export function SidebarLayout({ user, children }: SidebarLayoutProps) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const isAdmin = user.role === "DG" || user.role === "ADMIN"
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-6 border-b border-zinc-100">
-        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-100 flex-shrink-0 shadow-sm">
-          <img src="/la_revelation_logo.jpg" alt="Logo" className="w-full h-full object-cover" />
-        </div>
-        <div>
-          <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest leading-none">Motel</p>
-          <p className="font-serif text-base font-bold text-zinc-900 leading-snug">La Révélation</p>
-        </div>
-      </div>
+  const visibleItems = NAV_ITEMS.filter(item => item.roles.includes(user.role))
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-5 flex flex-col gap-1 overflow-y-auto">
-        {isAdmin && (
-          <>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 px-4 mb-2">Direction</p>
-            {NAV_ADMIN.map((item) => (
-              <NavLink
-                key={item.href}
-                {...item}
-                active={pathname === item.href.split("?")[0] && (
-                  item.href === "/dashboard/admin" 
-                    ? !pathname.includes("reception") 
-                    : false
-                ) || pathname === item.href.split("?")[0]}
-              />
-            ))}
-            <div className="border-t border-zinc-100 my-3" />
-          </>
+  const isActive = (href: string) => {
+    if (href === "/dashboard") return pathname === "/dashboard"
+    return pathname.startsWith(href)
+  }
+
+  const roleLabel = user.role === "ADMIN" ? "Administrateur" : user.role === "DG" ? "Directeur Général" : "Réceptionniste"
+
+  const renderSidebar = (isMobile = false) => {
+    const collapsed = isMobile ? false : isCollapsed
+
+    return (
+      <div className="flex flex-col h-full relative">
+        {/* Collapse toggle */}
+        {!isMobile && (
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="absolute -right-3 top-7 w-6 h-6 bg-white border border-zinc-200 rounded-full flex items-center justify-center text-zinc-400 hover:text-amber-600 hover:border-amber-200 z-50 shadow-sm transition-colors"
+          >
+            {collapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+          </button>
         )}
 
-        <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 px-4 mb-2">Réception</p>
-        {NAV_RECEPTION.map((item) => (
-          <NavLink
-            key={item.href}
-            {...item}
-            active={pathname === item.href}
-          />
-        ))}
-      </nav>
+        {/* Logo */}
+        <div className={`flex items-center gap-3 py-5 border-b border-zinc-100 transition-all duration-300 ${collapsed ? "px-0 justify-center" : "px-5"}`}>
+          <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-100 flex-shrink-0 shadow-sm">
+            <img src="/la_revelation_logo.jpg" alt="Logo" className="w-full h-full object-cover" />
+          </div>
+          {!collapsed && (
+            <div className="overflow-hidden">
+              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest leading-none">Motel</p>
+              <p className="font-serif text-[15px] font-bold text-zinc-900 leading-snug truncate">La Révélation</p>
+            </div>
+          )}
+        </div>
 
-      {/* User footer */}
-      <div className="border-t border-zinc-100 px-3 py-4">
-        <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-zinc-50">
-          <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-bold text-amber-700">
-              {(user.name || user.email)[0].toUpperCase()}
-            </span>
+        {/* Nav */}
+        <nav className="flex-1 py-4 flex flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
+          {visibleItems.map(item => (
+            <NavLink
+              key={item.href}
+              {...item}
+              active={isActive(item.href)}
+              collapsed={collapsed}
+            />
+          ))}
+        </nav>
+
+        {/* User footer */}
+        <div className="border-t border-zinc-100 py-3">
+          <div className={`flex items-center gap-3 py-2 rounded-xl bg-zinc-50 transition-all ${collapsed ? "px-0 mx-2 justify-center" : "px-3 mx-3"}`}>
+            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-sm font-bold text-amber-700">
+                {(user.name || user.email)[0].toUpperCase()}
+              </span>
+            </div>
+            {!collapsed && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-zinc-800 truncate">{user.name || "Utilisateur"}</p>
+                  <p className="text-[11px] text-zinc-400 truncate">{roleLabel}</p>
+                </div>
+                <button
+                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  title="Se déconnecter"
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut size={16} />
+                </button>
+              </>
+            )}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-zinc-800 truncate">{user.name || "Utilisateur"}</p>
-            <p className="text-xs text-zinc-500 truncate">{user.role}</p>
-          </div>
-          <form action="/api/auth/signout" method="POST">
-            <button type="submit" title="Se déconnecter" className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-              <LogOut size={16} />
-            </button>
-          </form>
+          {collapsed && (
+            <div className="flex justify-center mt-1">
+              <button
+                onClick={() => signOut({ callbackUrl: "/login" })}
+                title="Se déconnecter"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50 flex">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-white border-r border-zinc-200 fixed inset-y-0 left-0 z-40">
-        <SidebarContent />
+      <aside className={`hidden md:flex flex-col bg-white border-r border-zinc-200 fixed inset-y-0 left-0 z-40 transition-all duration-300 ease-in-out ${isCollapsed ? "w-[72px]" : "w-64"}`}>
+        {renderSidebar()}
       </aside>
 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl">
-            <SidebarContent />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-2xl">
+            {renderSidebar(true)}
           </aside>
         </div>
       )}
 
       {/* Content */}
-      <div className="flex-1 md:ml-64 flex flex-col">
+      <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? "md:ml-[72px]" : "md:ml-64"}`}>
         {/* Mobile topbar */}
-        <header className="md:hidden flex items-center h-14 px-4 border-b border-zinc-200 bg-white sticky top-0 z-30">
+        <header className="md:hidden flex items-center h-14 px-4 border-b border-zinc-200 bg-white sticky top-0 z-30 gap-3">
           <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100">
             <Menu size={20} />
           </button>
-          <div className="flex items-center gap-2 ml-3">
-            <div className="w-7 h-7 rounded-full overflow-hidden">
-              <img src="/la_revelation_logo.jpg" alt="Logo" className="w-full h-full object-cover" />
-            </div>
-            <span className="font-serif font-bold text-zinc-800">La Révélation</span>
+          <div className="w-7 h-7 rounded-full overflow-hidden border border-amber-100">
+            <img src="/la_revelation_logo.jpg" alt="Logo" className="w-full h-full object-cover" />
           </div>
+          <span className="font-serif font-bold text-zinc-800 text-sm">La Révélation</span>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 md:p-8 pb-24">
+        <main className="flex-1 p-5 md:p-8">
           {children}
         </main>
       </div>
