@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Plus, ArrowUp, ArrowDown, ChevronDown, ChevronUp, Wine, ShoppingBag } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Plus, ArrowUp, ArrowDown, ChevronDown, ChevronUp, Wine, ShoppingBag, Loader2, X, Clock } from "lucide-react"
 import { addStockMovement } from "@/app/actions/admin"
-import { formatMoney } from "@/lib/utils"
+import { formatMoney, todayStr } from "@/lib/utils"
+import { toast } from "sonner"
 
 type Product = { id: string; name: string; category: string; price: number; stock: number }
 type Movement = {
@@ -19,10 +21,11 @@ const CATEGORIES: Record<string, { label: string; icon: React.ReactNode }> = {
 export function StockPageClient({ products, movements, role }: {
   products: Product[]; movements: Movement[]; role: string
 }) {
+  const router = useRouter()
   const [showMovementForm, setShowMovementForm] = useState(false)
   const [form, setForm] = useState({
     type: "IN", qty: "", price: "", motif: "",
-    date: new Date().toISOString().slice(0, 10), productId: products[0]?.id ?? ""
+    date: todayStr(), productId: products[0]?.id ?? ""
   })
   const [expandedDate, setExpandedDate] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -30,8 +33,19 @@ export function StockPageClient({ products, movements, role }: {
   const canAdd = role === "ADMIN" || role === "RECEPTIONIST"
 
   const handleAdd = () => {
-    if (!form.qty || !form.productId) return
-    if (form.type === "OUT" && !form.motif) { alert("Le motif est obligatoire pour une sortie."); return }
+    if (!form.qty || parseInt(form.qty) <= 0) {
+      toast.error("Veuillez saisir une quantité valide.")
+      return
+    }
+    if (!form.productId) {
+      toast.error("Veuillez sélectionner un produit.")
+      return
+    }
+    if (form.type === "OUT" && !form.motif?.trim()) { 
+      toast.error("Le motif est obligatoire pour une sortie.")
+      return 
+    }
+
     startTransition(async () => {
       try {
         await addStockMovement({
@@ -42,11 +56,12 @@ export function StockPageClient({ products, movements, role }: {
           date: form.date,
           productId: form.productId
         })
-        setForm({ type: "IN", qty: "", price: "", motif: "", date: new Date().toISOString().slice(0, 10), productId: products[0]?.id ?? "" })
+        setForm({ type: "IN", qty: "", price: "", motif: "", date: todayStr(), productId: products[0]?.id ?? "" })
         setShowMovementForm(false)
-        window.location.reload()
+        toast.success("Mouvement de stock enregistré !")
+        router.refresh()
       } catch (err: unknown) {
-        alert(err instanceof Error ? err.message : "Erreur")
+        toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
       }
     })
   }
@@ -68,15 +83,15 @@ export function StockPageClient({ products, movements, role }: {
       </div>
 
       {/* Stock value banner */}
-      <div className="bg-gradient-to-r from-zinc-900 to-zinc-700 rounded-2xl p-5 text-white flex items-center justify-between">
+      <div className="bg-gradient-to-r from-zinc-800 to-zinc-600 rounded-md p-5 text-white flex items-center justify-between">
         <div>
-          <p className="text-zinc-400 text-xs font-semibold uppercase tracking-wider">Valeur totale du stock</p>
+          <p className="text-zinc-300 text-xs font-semibold uppercase tracking-wider">Valeur totale du stock</p>
           <p className="text-3xl font-bold font-mono mt-1">{formatMoney(stockValue)}</p>
         </div>
         {canAdd && (
           <button
             onClick={() => setShowMovementForm(!showMovementForm)}
-            className="flex items-center gap-2 bg-amber-400 hover:bg-amber-500 text-zinc-900 font-bold text-sm px-4 py-2.5 rounded-xl transition-colors"
+            className="btn-primary"
           >
             <Plus size={15} /> Mouvement
           </button>
@@ -85,55 +100,62 @@ export function StockPageClient({ products, movements, role }: {
 
       {/* Add movement form */}
       {showMovementForm && canAdd && (
-        <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5 flex flex-col gap-4">
-          <h2 className="font-bold text-zinc-800">Nouveau mouvement de stock</h2>
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex flex-col gap-1 w-32">
-              <label className="text-xs font-semibold text-zinc-500">Type</label>
-              <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
-                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
-                <option value="IN">Entrée (+)</option>
-                <option value="OUT">Sortie (-)</option>
-              </select>
+        <div className="card-base">
+          <div className="px-6 py-5 bg-zinc-50/80">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-zinc-800 text-sm">Nouveau mouvement de stock</h3>
+              <button onClick={() => setShowMovementForm(false)} className="p-1 rounded-sm text-zinc-400 hover:text-zinc-600">
+                <X size={16} />
+              </button>
             </div>
-            <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-              <label className="text-xs font-semibold text-zinc-500">Produit</label>
-              <select value={form.productId} onChange={e => setForm({ ...form, productId: e.target.value })}
-                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
-                {products.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({CATEGORIES[p.category]?.label ?? p.category})</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1 w-24">
-              <label className="text-xs font-semibold text-zinc-500">Quantité</label>
-              <input type="number" min={1} value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })}
-                placeholder="0"
-                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
-            </div>
-            <div className="flex flex-col gap-1 w-28">
-              <label className="text-xs font-semibold text-zinc-500">Prix unit. (opt.)</label>
-              <input type="number" min={0} value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}
-                placeholder="FCFA"
-                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
-            </div>
-            {form.type === "OUT" && (
-              <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
-                <label className="text-xs font-semibold text-zinc-500">Motif <span className="text-red-500">*</span></label>
-                <input value={form.motif} onChange={e => setForm({ ...form, motif: e.target.value })}
-                  placeholder="ex: Vente bar, Casse..."
-                  className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex flex-col gap-1 w-32">
+                <label className="label-base">Type</label>
+                <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
+                  className="select-base">
+                  <option value="IN">Entrée (+)</option>
+                  <option value="OUT">Sortie (-)</option>
+                </select>
               </div>
-            )}
-            <div className="flex flex-col gap-1 w-36">
-              <label className="text-xs font-semibold text-zinc-500">Date</label>
-              <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
-                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+              <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
+                <label className="label-base">Produit <span className="text-red-400">*</span></label>
+                <select value={form.productId} onChange={e => setForm({ ...form, productId: e.target.value })}
+                  className="select-base">
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({CATEGORIES[p.category]?.label ?? p.category})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1 w-24">
+                <label className="label-base">Quantité <span className="text-red-400">*</span></label>
+                <input type="number" min={1} value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })}
+                  placeholder="0"
+                  className="input-base" />
+              </div>
+              <div className="flex flex-col gap-1 w-28">
+                <label className="label-base">Prix unit. (opt.)</label>
+                <input type="number" min={0} value={form.price} onChange={e => setForm({ ...form, price: e.target.value })}
+                  placeholder="FCFA"
+                  className="input-base" />
+              </div>
+              {form.type === "OUT" && (
+                <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+                  <label className="label-base">Motif <span className="text-red-400">*</span></label>
+                  <input value={form.motif} onChange={e => setForm({ ...form, motif: e.target.value })}
+                    placeholder="ex: Vente bar, Casse..."
+                    className="input-base" />
+                </div>
+              )}
+              <div className="flex flex-col gap-1 w-36">
+                <label className="label-base">Date</label>
+                <input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}
+                  className="input-base" />
+              </div>
+              <button onClick={handleAdd} disabled={isPending}
+                className="btn-secondary h-10">
+                {isPending ? <><Loader2 size={14} className="animate-spin" /> Traitement...</> : "Enregistrer"}
+              </button>
             </div>
-            <button onClick={handleAdd} disabled={isPending}
-              className="h-9 px-4 bg-zinc-900 text-white rounded-xl text-sm font-semibold hover:bg-zinc-700 transition-colors disabled:opacity-50">
-              Enregistrer
-            </button>
           </div>
         </div>
       )}
@@ -143,7 +165,7 @@ export function StockPageClient({ products, movements, role }: {
         const catProducts = products.filter(p => p.category === cat)
         if (!catProducts.length) return null
         return (
-          <div key={cat} className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
+          <div key={cat} className="card-base">
             <div className="px-6 py-4 border-b border-zinc-50 flex items-center gap-2">
               {CATEGORIES[cat]?.icon}
               <h2 className="font-bold text-zinc-800">{CATEGORIES[cat]?.label}</h2>
@@ -182,11 +204,20 @@ export function StockPageClient({ products, movements, role }: {
       })}
 
       {/* Movement history by day */}
-      {Object.keys(movementsByDate).length > 0 && (
-        <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-zinc-50">
-            <h2 className="font-bold text-zinc-800">Historique des mouvements</h2>
+      <div className="card-base">
+        <div className="px-6 py-4 border-b border-zinc-50">
+          <h2 className="font-bold text-zinc-800">Historique des mouvements</h2>
+        </div>
+        
+        {Object.keys(movementsByDate).length === 0 ? (
+          <div className="py-16 text-center flex flex-col items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-zinc-100 flex items-center justify-center">
+              <Clock size={24} className="text-zinc-300" />
+            </div>
+            <p className="font-semibold text-zinc-400">Aucun historique disponible</p>
+            <p className="text-sm text-zinc-400">Les mouvements de stock apparaîtront ici.</p>
           </div>
+        ) : (
           <div className="divide-y divide-zinc-50">
             {Object.entries(movementsByDate).map(([date, dayMovements]) => (
               <div key={date}>
@@ -244,8 +275,8 @@ export function StockPageClient({ products, movements, role }: {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

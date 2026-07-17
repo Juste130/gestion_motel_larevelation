@@ -39,19 +39,19 @@ async function main() {
   }
 
   // Initialiser les boissons par défaut si elles n'existent pas
-  const countDrinks = await prisma.drink.count();
+  const countDrinks = await prisma.product.count({ where: { category: 'DRINK' } });
   if (countDrinks === 0) {
-    await prisma.drink.createMany({
+    await prisma.product.createMany({
       data: [
-        { name: 'Flag', price: 700, stock: 50 },
-        { name: 'Doppel Noir', price: 700, stock: 50 },
-        { name: 'Kankpé', price: 700, stock: 50 },
-        { name: 'LB 60cl', price: 700, stock: 50 },
-        { name: 'BF 60cl', price: 700, stock: 50 },
-        { name: 'Chill 60cl', price: 700, stock: 50 },
-        { name: 'Sucrerie', price: 600, stock: 50 },
-        { name: 'Fifa', price: 600, stock: 50 },
-        { name: 'Heineken', price: 1000, stock: 50 },
+        { name: 'Flag', price: 700, stock: 50, category: 'DRINK' },
+        { name: 'Doppel Noir', price: 700, stock: 50, category: 'DRINK' },
+        { name: 'Kankpé', price: 700, stock: 50, category: 'DRINK' },
+        { name: 'LB 60cl', price: 700, stock: 50, category: 'DRINK' },
+        { name: 'BF 60cl', price: 700, stock: 50, category: 'DRINK' },
+        { name: 'Chill 60cl', price: 700, stock: 50, category: 'DRINK' },
+        { name: 'Sucrerie', price: 600, stock: 50, category: 'DRINK' },
+        { name: 'Fifa', price: 600, stock: 50, category: 'DRINK' },
+        { name: 'Heineken', price: 1000, stock: 50, category: 'DRINK' },
       ]
     })
     console.log('Boissons par défaut créées.')

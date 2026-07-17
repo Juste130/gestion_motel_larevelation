@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { addRoom, deleteRoom, addProduct, deleteProduct } from "@/app/actions/admin"
 import { formatMoney } from "@/lib/utils"
 
-type Room = { id: string; num: string; type: string; label: string }
+type Room = { id: string; num: string; type: string; label: string; price: number }
 type Product = { id: string; name: string; category: string; price: number; stock: number }
 
 export function ParamsPageClient({ rooms: initRooms, products: initProducts, role }: {
@@ -13,7 +13,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
 }) {
   const [rooms, setRooms] = useState(initRooms)
   const [products, setProducts] = useState(initProducts)
-  const [roomForm, setRoomForm] = useState({ num: "", type: "C", label: "Confort" })
+  const [roomForm, setRoomForm] = useState({ num: "", type: "C", label: "Confort", price: 0 })
   const [productForm, setProductForm] = useState({ name: "", category: "DRINK", price: "", stock: "0" })
   const [isPending, startTransition] = useTransition()
 
@@ -25,7 +25,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
     startTransition(async () => {
       await addRoom(roomForm)
       setRooms(prev => [...prev, { ...roomForm, id: Date.now().toString() }])
-      setRoomForm({ num: "", type: "C", label: "Confort" })
+      setRoomForm({ num: "", type: "C", label: "Confort", price: 0 })
     })
   }
 
@@ -95,7 +95,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
               </select>
             </div>
             <button onClick={handleAddRoom} disabled={isPending}
-              className="h-9 px-4 bg-zinc-900 text-white rounded-xl text-sm font-semibold hover:bg-zinc-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+              className="btn-secondary h-9 px-4">
               <Plus size={14} /> Ajouter
             </button>
           </div>
@@ -117,7 +117,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
                 <td className="px-6 py-3.5 text-zinc-600">{r.label}</td>
                 {canDelete && (
                   <td className="px-6 py-3.5 text-right">
-                    <button onClick={() => handleDeleteRoom(r.id)} className="p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <button onClick={() => handleDeleteRoom(r.id)} className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-sm transition-colors">
                       <Trash2 size={14} />
                     </button>
                   </td>
@@ -166,7 +166,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
                 className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
             </div>
             <button onClick={handleAddProduct} disabled={isPending}
-              className="h-9 px-4 bg-zinc-900 text-white rounded-xl text-sm font-semibold hover:bg-zinc-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+              className="btn-secondary h-9 px-4">
               <Plus size={14} /> Ajouter
             </button>
           </div>
@@ -200,7 +200,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
                 </td>
                 {canDelete && (
                   <td className="px-6 py-3.5 text-right">
-                    <button onClick={() => handleDeleteProduct(p.id)} className="p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <button onClick={() => handleDeleteProduct(p.id)} className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-sm transition-colors">
                       <Trash2 size={14} />
                     </button>
                   </td>

@@ -11,10 +11,25 @@ async function getSessionAndUser() {
   return session
 }
 
+import { todayStr } from "@/lib/utils"
+
 export async function getEntries(date: string) {
   // date in YYYY-MM-DD
+  const today = todayStr()
+  
+  // Si on cherche une date dans le futur, on ne remonte pas les séjours "en cours" du passé.
+  const isFuture = date > today
+
   const entries = await prisma.entry.findMany({
-    where: { date },
+    where: {
+      OR: [
+        { date: date },
+        ...(!isFuture ? [{ 
+          date: { lt: date },
+          departure: null
+        }] : [])
+      ]
+    },
     include: {
       products: {
         include: { product: true }
@@ -29,6 +44,7 @@ export async function getEntries(date: string) {
 }
 
 export async function addEntry(data: {
+// ... existing addEntry function logic is untouched ...
   date: string
   receiptNo?: string
   roomNum: string
@@ -121,26 +137,115 @@ export async function addEntry(data: {
   return entry
 }
 
-export async function updateDeparture(entryId: string, departure: string, duration: string) {
+export async function closeEntry(entryId: string, data: {
+  departure: string;
+  duration?: string;
+  roomAmount: number;
+  products: { id: string; qty: number; price: number }[];
+  currentDate: string;
+}) {
   const session = await getSessionAndUser()
   const userId = (session.user as any)?.id
 
-  const updated = await prisma.entry.update({
-    where: { id: entryId },
-    data: { departure, duration }
-  })
+  await prisma.$transaction(async (tx) => {
+    const entry = await tx.entry.findUnique({ where: { id: entryId } })
+    if (!entry) throw new Error("Séjour introuvable")
 
-  await prisma.auditLog.create({
-    data: {
-      action: 'UPDATE_DEPARTURE',
-      entityId: entryId,
-      details: `Ajout heure de départ: ${departure}`,
-      userId,
+    let additionalAmount = 0
+    if (data.products && data.products.length > 0) {
+      const productIds = data.products.map(p => p.id)
+      const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
+
+      for (const p of data.products) {
+        const dbProduct = dbProducts.find(x => x.id === p.id)
+        if (!dbProduct) throw new Error("Produit introuvable")
+        
+        const price = dbProduct.price
+        additionalAmount += price * p.qty
+
+        const existingEntryProduct = await tx.entryProduct.findFirst({
+          where: { entryId: entry.id, productId: p.id }
+        })
+
+        if (existingEntryProduct) {
+          await tx.entryProduct.update({
+            where: { id: existingEntryProduct.id },
+            data: { qty: { increment: p.qty } }
+          })
+        } else {
+          await tx.entryProduct.create({
+            data: {
+              entryId: entry.id,
+              productId: p.id,
+              qty: p.qty,
+              price: price
+            }
+          })
+        }
+
+        await tx.product.update({
+          where: { id: p.id },
+          data: { stock: { decrement: p.qty } }
+        })
+
+        await tx.stockMovement.create({
+          data: {
+            type: "OUT",
+            qty: p.qty,
+            price: price,
+            motif: `Ajout conso clôture séjour ch. ${entry.roomNum}`,
+            date: data.currentDate,
+            productId: p.id,
+            userId
+          }
+        })
+      }
     }
+
+    const newRoomAmount = data.roomAmount
+    const newDrinksAmount = entry.drinksAmount + additionalAmount
+    const newTotal = newRoomAmount + entry.condomAmount + newDrinksAmount
+
+    await tx.entry.update({
+      where: { id: entryId },
+      data: {
+        departure: data.departure,
+        duration: data.duration,
+        roomAmount: newRoomAmount,
+        drinksAmount: newDrinksAmount,
+        total: newTotal,
+        date: data.currentDate // Mise à jour de la date pour la compta !
+      }
+    })
+
+    await tx.auditLog.create({
+      data: {
+        action: 'UPDATE_DEPARTURE',
+        entityId: entryId,
+        details: `Clôture: départ ${data.departure}, montant ch. ${newRoomAmount}`,
+        userId,
+      }
+    })
   })
 
   revalidatePath('/dashboard', 'layout')
-  return updated
+}
+
+export async function updateDeparture(entryId: string, departure: string, duration: string) {
+  const session = await getSessionAndUser()
+  const role = (session.user as any)?.role
+
+  // ANTI-FRAUD RULE: Only DG/ADMIN can update departure directly
+  if (role !== "DG" && role !== "ADMIN") {
+    throw new Error("Seule la direction peut modifier l'heure de départ.")
+  }
+
+  await prisma.entry.update({
+    where: { id: entryId },
+    data: { departure, duration }
+  })
+  
+  revalidatePath('/dashboard', 'layout')
 }
 
 export async function deleteEntry(entryId: string) {
@@ -191,6 +296,85 @@ export async function deleteEntry(entryId: string) {
         }
       })
     }
+  })
+
+  revalidatePath('/dashboard', 'layout')
+}
+
+export async function addProductToEntry(entryId: string, date: string, products: { id: string; qty: number; price: number }[]) {
+  const session = await getSessionAndUser()
+  const userId = (session.user as any)?.id
+
+  await prisma.$transaction(async (tx) => {
+    const entry = await tx.entry.findUnique({ where: { id: entryId } })
+    if (!entry) throw new Error("Séjour introuvable")
+
+    const productIds = products.map(p => p.id)
+    const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
+
+    let additionalAmount = 0
+
+    for (const p of products) {
+      const dbProduct = dbProducts.find(x => x.id === p.id)
+      if (!dbProduct) throw new Error("Produit introuvable")
+      
+      const price = dbProduct.price
+      additionalAmount += price * p.qty
+
+      const existingEntryProduct = await tx.entryProduct.findFirst({
+        where: { entryId: entry.id, productId: p.id }
+      })
+
+      if (existingEntryProduct) {
+        await tx.entryProduct.update({
+          where: { id: existingEntryProduct.id },
+          data: { qty: { increment: p.qty } }
+        })
+      } else {
+        await tx.entryProduct.create({
+          data: {
+            entryId: entry.id,
+            productId: p.id,
+            qty: p.qty,
+            price: price
+          }
+        })
+      }
+
+      await tx.product.update({
+        where: { id: p.id },
+        data: { stock: { decrement: p.qty } }
+      })
+
+      await tx.stockMovement.create({
+        data: {
+          type: "OUT",
+          qty: p.qty,
+          price: price,
+          motif: `Ajout conso séjour ch. ${entry.roomNum}`,
+          date: date,
+          productId: p.id,
+          userId
+        }
+      })
+    }
+
+    await tx.entry.update({
+      where: { id: entryId },
+      data: {
+        drinksAmount: { increment: additionalAmount },
+        total: { increment: additionalAmount }
+      }
+    })
+
+    await tx.auditLog.create({
+      data: {
+        action: 'UPDATE_ENTRY',
+        entityId: entryId,
+        details: `Ajout de consommations au séjour ch. ${entry.roomNum}`,
+        userId,
+      }
+    })
   })
 
   revalidatePath('/dashboard', 'layout')

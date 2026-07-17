@@ -11,6 +11,7 @@ import { signOut } from "next-auth/react"
 
 interface SidebarLayoutProps {
   user: { name: string; email: string; role: string }
+  lowStockCount?: number
   children: React.ReactNode
 }
 
@@ -31,14 +32,14 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/bilans",  label: "Bilans & Clôtures",  icon: BarChart2,        roles: ["ADMIN", "DG", "RECEPTIONIST"] },
 ]
 
-function NavLink({ href, label, icon: Icon, active, collapsed }: {
-  href: string; label: string; icon: NavItem["icon"]; active: boolean; collapsed: boolean
+function NavLink({ href, label, icon: Icon, active, collapsed, badge }: {
+  href: string; label: string; icon: NavItem["icon"]; active: boolean; collapsed: boolean; badge?: number
 }) {
   return (
     <Link
       href={href}
       title={collapsed ? label : undefined}
-      className={`flex items-center gap-3 py-2.5 rounded-xl text-[15px] font-medium transition-all duration-150 ${
+      className={`relative flex items-center gap-3 py-2.5 rounded-md text-[15px] font-medium transition-all duration-150 ${
         collapsed ? "justify-center px-0 mx-2" : "px-4"
       } ${
         active
@@ -46,18 +47,28 @@ function NavLink({ href, label, icon: Icon, active, collapsed }: {
           : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
       }`}
     >
-      <Icon size={18} className={`flex-shrink-0 ${active ? "text-amber-600" : "text-zinc-400"}`} />
+      <div className="relative">
+        <Icon size={18} className={`flex-shrink-0 ${active ? "text-amber-600" : "text-zinc-400"}`} />
+        {collapsed && badge !== undefined && badge > 0 && (
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white" />
+        )}
+      </div>
       {!collapsed && (
         <>
           <span className="truncate">{label}</span>
-          {active && <ChevronRight size={14} className="ml-auto text-amber-400 flex-shrink-0" />}
+          {badge !== undefined && badge > 0 && (
+            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md leading-none flex-shrink-0">
+              {badge}
+            </span>
+          )}
+          {active && (!badge || badge === 0) && <ChevronRight size={14} className="ml-auto text-amber-400 flex-shrink-0" />}
         </>
       )}
     </Link>
   )
 }
 
-export function SidebarLayout({ user, children }: SidebarLayoutProps) {
+export function SidebarLayout({ user, lowStockCount = 0, children }: SidebarLayoutProps) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
@@ -88,13 +99,13 @@ export function SidebarLayout({ user, children }: SidebarLayoutProps) {
 
         {/* Logo */}
         <div className={`flex items-center gap-3 py-5 border-b border-zinc-100 transition-all duration-300 ${collapsed ? "px-0 justify-center" : "px-5"}`}>
-          <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-amber-100 flex-shrink-0 shadow-sm">
+          <div className={`rounded-full overflow-hidden border-2 border-amber-100 flex-shrink-0 shadow-sm` + ` ${collapsed ? "w-8 h-8 md:w-10 md:h-10" : "w-12 h-12 md:w-16 md:h-16"}`}>
             <img src="/la_revelation_logo.jpg" alt="Logo" className="w-full h-full object-cover" />
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
-              <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest leading-none">Motel</p>
-              <p className="font-serif text-[15px] font-bold text-zinc-900 leading-snug truncate">La Révélation</p>
+              <p className="text-[14px] font-bold text-amber-600 uppercase tracking-widest leading-none">Motel</p>
+              <p className="font-serif text-[20px] font-bold text-zinc-900 leading-snug truncate">La Révélation</p>
             </div>
           )}
         </div>
@@ -107,13 +118,14 @@ export function SidebarLayout({ user, children }: SidebarLayoutProps) {
               {...item}
               active={isActive(item.href)}
               collapsed={collapsed}
+              badge={item.label === "Stock" ? lowStockCount : undefined}
             />
           ))}
         </nav>
 
         {/* User footer */}
         <div className="border-t border-zinc-100 py-3">
-          <div className={`flex items-center gap-3 py-2 rounded-xl bg-zinc-50 transition-all ${collapsed ? "px-0 mx-2 justify-center" : "px-3 mx-3"}`}>
+          <div className={`flex items-center gap-3 py-2 rounded-md bg-zinc-50 transition-all ${collapsed ? "px-0 mx-2 justify-center" : "px-3 mx-3"}`}>
             <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
               <span className="text-sm font-bold text-amber-700">
                 {(user.name || user.email)[0].toUpperCase()}
@@ -128,7 +140,7 @@ export function SidebarLayout({ user, children }: SidebarLayoutProps) {
                 <button
                   onClick={() => signOut({ callbackUrl: "/login" })}
                   title="Se déconnecter"
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  className="p-1.5 rounded-sm text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                 >
                   <LogOut size={16} />
                 </button>
@@ -140,7 +152,7 @@ export function SidebarLayout({ user, children }: SidebarLayoutProps) {
               <button
                 onClick={() => signOut({ callbackUrl: "/login" })}
                 title="Se déconnecter"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                className="p-1.5 rounded-sm text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
               >
                 <LogOut size={16} />
               </button>
@@ -172,7 +184,7 @@ export function SidebarLayout({ user, children }: SidebarLayoutProps) {
       <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isCollapsed ? "md:ml-[72px]" : "md:ml-64"}`}>
         {/* Mobile topbar */}
         <header className="md:hidden flex items-center h-14 px-4 border-b border-zinc-200 bg-white sticky top-0 z-30 gap-3">
-          <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg text-zinc-500 hover:bg-zinc-100">
+          <button onClick={() => setMobileOpen(true)} className="p-2 rounded-sm text-zinc-500 hover:bg-zinc-100">
             <Menu size={20} />
           </button>
           <div className="w-7 h-7 rounded-full overflow-hidden border border-amber-100">

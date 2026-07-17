@@ -4,6 +4,7 @@ import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { Lock, ArrowRight } from "lucide-react"
+import { toast } from "sonner"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -19,7 +20,7 @@ export default function LoginPage() {
     setError("")
 
     if (mode === "request") {
-      alert("Demande de compte envoyée à la direction !")
+      toast.success("Demande de compte envoyée à la direction !")
       setMode("login")
       setLoading(false)
       return
@@ -133,7 +134,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-2 w-full h-12 bg-zinc-800 text-white rounded-xl font-semibold text-base flex items-center justify-center gap-2 hover:bg-amber-500 hover:text-zinc-900 transition-all duration-200 disabled:opacity-60"
+              className="btn-primary w-full mt-2"
             >
               {loading ? (
                 <span className="animate-pulse">Chargement...</span>
@@ -154,7 +155,7 @@ export default function LoginPage() {
           <div className="mt-6 text-center">
             <button
               onClick={() => setMode(mode === "login" ? "request" : "login")}
-              className="text-base text-zinc-500 hover:text-amber-600 transition-colors font-medium"
+              className="btn-ghost"
             >
               {mode === "login"
                 ? "Demander la création d'un compte"

@@ -2,33 +2,35 @@
 
 :root {
   --background: #FAFAFA;
-  --foreground: #111111;
+  --foreground: #18181B;
   --card: #FFFFFF;
-  --card-foreground: #111111;
+  --card-foreground: #18181B;
   --popover: #FFFFFF;
-  --popover-foreground: #111111;
+  --popover-foreground: #18181B;
   
-  --primary: #1A1A1A;
+  /* Brand Primary: Amber-600 */
+  --primary: #D97706;
   --primary-foreground: #FFFFFF;
   
-  --secondary: #F4F4F5;
-  --secondary-foreground: #111111;
+  /* Brand Secondary: Amber-50 */
+  --secondary: #FFFBEB;
+  --secondary-foreground: #B45309; /* Amber-700 */
   
   --muted: #F4F4F5;
   --muted-foreground: #71717A;
   
-  --accent: #EAB308; /* GOLD/YELLOW */
-  --accent-foreground: #111111;
+  --accent: #F59E0B;
+  --accent-foreground: #FFFFFF;
   
-  --destructive: #EF4444; /* RED */
+  --destructive: #EF4444;
   --destructive-foreground: #FFFFFF;
   
-  --success: #22C55E; /* GREEN */
+  --success: #10B981;
   --success-foreground: #FFFFFF;
   
   --border: #E4E4E7;
   --input: #E4E4E7;
-  --ring: #EAB308;
+  --ring: #D97706;
   --radius: 0.75rem;
 }
 
@@ -64,8 +66,85 @@
   --radius-lg: calc(var(--radius) + 2px);
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  min-height: 100vh;
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    min-height: 100vh;
+  }
+
+  /* Typographie Uniformisée */
+  h1 {
+    font-size: 2.25rem; /* 36px */
+    line-height: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--foreground);
+  }
+  
+  h2 {
+    font-size: 1.875rem; /* 30px */
+    line-height: 2.25rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--foreground);
+  }
+  
+  h3 {
+    font-size: 1.5rem; /* 24px */
+    line-height: 2rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  
+  h4 {
+    font-size: 1.25rem; /* 20px */
+    line-height: 1.75rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+  
+  p {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
 }
+
+@layer components {
+  /* Cartes */
+  .card-base {
+    @apply bg-white rounded-md border border-zinc-100 shadow-sm overflow-hidden;
+  }
+  .card-body {
+    @apply p-5 md:p-6;
+  }
+
+  /* Formulaires */
+  .input-base {
+    @apply h-10 px-4 text-sm rounded-sm border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white transition-all duration-200 w-full;
+  }
+  .select-base {
+    @apply h-10 px-4 text-sm rounded-sm border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white transition-all duration-200 w-full;
+  }
+  .label-base {
+    @apply text-xs font-semibold text-zinc-500 mb-1.5 block;
+  }
+
+  /* Boutons */
+  .btn-primary {
+    @apply flex items-center justify-center gap-2 py-3 px-5 bg-amber-500 hover:bg-amber-600 text-white rounded-sm text-sm font-semibold transition-all duration-200 hover:cursor-pointer disabled:opacity-50 disabled:pointer-events-none shadow-sm shadow-amber-500/20 hover:shadow-md hover:shadow-amber-500/30;
+  }
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2 py-3 px-5 bg-white border border-amber-500 hover:bg-amber-50 text-amber-600 rounded-sm text-sm font-semibold transition-all duration-200 hover:cursor-pointer disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-outline {
+    @apply flex items-center justify-center gap-2 py-3 px-5 border border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50 text-zinc-700 rounded-sm text-sm font-semibold transition-all duration-200 hover:cursor-pointer disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply flex items-center justify-center gap-2 py-3 px-5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-sm text-sm font-semibold transition-all duration-200 hover:cursor-pointer disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-destructive {
+    @apply flex items-center justify-center gap-2 py-3 px-5 bg-red-500 hover:bg-red-600 text-white rounded-sm text-sm font-bold transition-all duration-200 hover:cursor-pointer disabled:opacity-50 disabled:pointer-events-none shadow-sm shadow-red-500/20;
+  }
+}
+

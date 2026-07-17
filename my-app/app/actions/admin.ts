@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import bcrypt from "bcryptjs"
+import { todayStr } from "@/lib/utils"
 
 export async function requireAuth() {
   const session = await getServerSession(authOptions)
@@ -179,7 +180,7 @@ export async function generateDailyClosure() {
   const { user } = await requireAuth()
   if (user.role === "DG") throw new Error("Le DG ne génère pas de clôture journalière")
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayStr()
   
   return await prisma.$transaction(async (tx) => {
     const entries = await tx.entry.findMany({ where: { closureId: null, userId: user.id } })
@@ -247,7 +248,7 @@ export async function validateClosure(id: string, handedAmount: number, comments
 export async function getResumeStats() {
   const { user } = await requireAuth()
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayStr()
   const thisMonth = today.slice(0, 7) // YYYY-MM
 
   let whereEntries: any = { date: { startsWith: thisMonth } }

@@ -54,7 +54,7 @@ export function LedgerTable({ date, entries, canDelete, onDelete }: any) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-md border border-border bg-card shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse min-w-[1180px]">
           <thead>
@@ -121,8 +121,8 @@ export function LedgerTable({ date, entries, canDelete, onDelete }: any) {
                   <td className="px-3 py-2 border-b border-border font-mono font-bold text-destructive">{formatMoney(e.total)}</td>
                   <td className="px-3 py-2 border-b border-border whitespace-nowrap text-right">
                     {canDelete && (
-                      <button onClick={() => onDelete(e.id)} className="bg-destructive/10 border-none rounded-md px-2 py-1 cursor-pointer hover:bg-destructive/20 transition-colors">
-                        <Trash2 size={12} className="text-destructive" />
+                      <button onClick={() => onDelete(e.id)} className="bg-red-50 border border-red-100 rounded-sm px-2 py-1 cursor-pointer hover:bg-red-100 transition-colors">
+                        <Trash2 size={12} className="text-red-500" />
                       </button>
                     )}
                   </td>

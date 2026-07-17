@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { CheckCircle, Clock, AlertTriangle, Plus } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { CheckCircle, Clock, AlertTriangle, Plus, Loader2 } from "lucide-react"
 import { generateDailyClosure, validateClosure } from "@/app/actions/admin"
 import { formatMoney } from "@/lib/utils"
+import { toast } from "sonner"
 
 type Closure = {
   id: string; date: string; type: string; status: string;
@@ -14,6 +16,7 @@ type Closure = {
 export function BilansPageClient({ closures: initClosures, role }: {
   closures: Closure[]; role: string
 }) {
+  const router = useRouter()
   const [closures, setClosures] = useState(initClosures)
   const [validating, setValidating] = useState<string | null>(null)
   const [validateForm, setValidateForm] = useState({ handedAmount: "", comments: "" })
@@ -26,9 +29,10 @@ export function BilansPageClient({ closures: initClosures, role }: {
     startTransition(async () => {
       try {
         await generateDailyClosure()
-        window.location.reload()
+        toast.success("Bilan journalier généré avec succès.")
+        router.refresh()
       } catch (e: unknown) {
-        alert(e instanceof Error ? e.message : "Erreur")
+        toast.error(e instanceof Error ? e.message : "Erreur lors de la génération du bilan.")
       }
     })
   }
@@ -40,9 +44,10 @@ export function BilansPageClient({ closures: initClosures, role }: {
         await validateClosure(id, parseFloat(validateForm.handedAmount), validateForm.comments || undefined)
         setValidating(null)
         setValidateForm({ handedAmount: "", comments: "" })
-        window.location.reload()
+        toast.success("Remise validée avec succès.")
+        router.refresh()
       } catch (e: unknown) {
-        alert(e instanceof Error ? e.message : "Erreur")
+        toast.error(e instanceof Error ? e.message : "Erreur lors de la validation.")
       }
     })
   }
@@ -51,7 +56,7 @@ export function BilansPageClient({ closures: initClosures, role }: {
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="font-serif text-3xl font-bold text-zinc-900">Bilans & Clôtures</h1>
+          <h1 className="font-serif text-3xl font-bold text-zinc-900">Bilans &amp; Clôtures</h1>
           <p className="text-zinc-500 mt-1 text-sm">
             {role === "RECEPTIONIST"
               ? "Vos bilans journaliers"
@@ -62,25 +67,28 @@ export function BilansPageClient({ closures: initClosures, role }: {
           <button
             onClick={handleGenerate}
             disabled={isPending}
-            className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-700 text-white font-bold text-sm px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+            className="btn-secondary"
           >
-            <Plus size={15} /> Générer bilan du jour
+            {isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+            Générer bilan du jour
           </button>
         )}
       </div>
 
       {closures.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-12 text-center">
-          <Clock size={36} className="text-zinc-300 mx-auto mb-3" />
+        <div className="card-base card-body text-center py-16 flex flex-col items-center gap-3">
+          <div className="w-14 h-14 rounded-2xl bg-zinc-100 flex items-center justify-center">
+            <Clock size={24} className="text-zinc-300" />
+          </div>
           <p className="text-zinc-400 font-medium">Aucun bilan généré pour l&apos;instant</p>
-          {canGenerate && <p className="text-zinc-300 text-sm mt-1">Cliquez sur &quot;Générer bilan du jour&quot; pour créer votre premier bilan.</p>}
+          {canGenerate && <p className="text-zinc-300 text-sm">Cliquez sur &quot;Générer bilan du jour&quot; pour créer votre premier bilan.</p>}
         </div>
       ) : (
         <div className="flex flex-col gap-3">
           {closures.map(c => {
             const hasDiscrepancy = c.discrepancy !== null && Math.abs(c.discrepancy) > 0
             return (
-              <div key={c.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${
+              <div key={c.id} className={`card-base shadow-sm overflow-hidden ${
                 c.status === "VALIDATED"
                   ? hasDiscrepancy ? "border-rose-200" : "border-emerald-200"
                   : "border-zinc-100"
@@ -138,29 +146,29 @@ export function BilansPageClient({ closures: initClosures, role }: {
                             value={validateForm.handedAmount}
                             onChange={e => setValidateForm({ ...validateForm, handedAmount: e.target.value })}
                             placeholder="Montant remis (FCFA)"
-                            className="h-8 px-3 text-sm rounded-xl border border-zinc-200 w-44 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            className="input-base w-44"
                           />
                           <input
                             value={validateForm.comments}
                             onChange={e => setValidateForm({ ...validateForm, comments: e.target.value })}
                             placeholder="Commentaire (opt.)"
-                            className="h-8 px-3 text-sm rounded-xl border border-zinc-200 w-40 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            className="input-base w-40"
                           />
                           <button
                             onClick={() => handleValidate(c.id)}
                             disabled={isPending}
-                            className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                            className="btn-primary h-9 px-3 text-xs disabled:opacity-50"
                           >
-                            Confirmer
+                            {isPending ? <Loader2 size={13} className="animate-spin" /> : "Confirmer"}
                           </button>
-                          <button onClick={() => setValidating(null)} className="h-8 px-3 text-zinc-400 hover:text-zinc-600 text-xs rounded-xl">
+                          <button onClick={() => setValidating(null)} className="btn-ghost h-9 px-3">
                             Annuler
                           </button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setValidating(c.id)}
-                          className="text-sm font-semibold text-amber-600 hover:text-amber-700 px-3 py-1.5 rounded-xl hover:bg-amber-50 transition-colors"
+                          className="btn-secondary h-9 px-3"
                         >
                           Valider la remise
                         </button>

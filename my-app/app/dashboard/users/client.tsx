@@ -1,8 +1,11 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Plus, Trash2, Loader2 } from "lucide-react"
 import { createUser, deleteUser } from "@/app/actions/admin"
+import { toast } from "sonner"
+import { ConfirmDeleteModal } from "@/components/confirm-delete-modal"
 
 type UserRow = { id: string; name: string | null; email: string; role: string; createdAt: Date }
 
@@ -16,54 +19,72 @@ const ROLE_COLORS: Record<string, string> = {
 export function UsersPageClient({ users: initUsers, currentRole }: {
   users: UserRow[]; currentRole: string
 }) {
+  const router = useRouter()
   const [users, setUsers] = useState(initUsers)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "RECEPTIONIST" })
-  const [error, setError] = useState("")
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const canDeleteUsers = currentRole === "ADMIN"
-  // DG can create RECEPTIONIST and DG, but not ADMIN
   const availableRoles = currentRole === "ADMIN"
     ? [{ v: "RECEPTIONIST", l: "Réceptionniste" }, { v: "DG", l: "Directeur Général" }, { v: "ADMIN", l: "Administrateur" }]
     : [{ v: "RECEPTIONIST", l: "Réceptionniste" }, { v: "DG", l: "Directeur Général" }]
 
   const handleCreate = () => {
-    if (!form.name || !form.email || !form.password) return
-    setError("")
+    if (!form.name || !form.email || !form.password) {
+      toast.error("Veuillez remplir tous les champs obligatoires.")
+      return
+    }
     startTransition(async () => {
       try {
         await createUser(form)
         setForm({ name: "", email: "", password: "", role: "RECEPTIONIST" })
         setShowForm(false)
-        window.location.reload()
+        toast.success(`Compte de ${form.name} créé avec succès.`)
+        router.refresh()
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Erreur de création")
+        toast.error(e instanceof Error ? e.message : "Erreur de création du compte.")
       }
     })
   }
 
-  const handleDelete = (id: string) => {
-    if (!confirm("Supprimer ce compte ? Cette action est irréversible.")) return
+  const handleDeleteConfirm = () => {
+    if (!deleteTarget) return
+    const { id, label } = deleteTarget
+    setDeleteTarget(null)
     startTransition(async () => {
-      await deleteUser(id)
-      setUsers(prev => prev.filter(u => u.id !== id))
+      try {
+        await deleteUser(id)
+        setUsers(prev => prev.filter(u => u.id !== id))
+        toast.success(`Compte de ${label} supprimé.`)
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Erreur lors de la suppression.")
+      }
     })
   }
 
   return (
     <div className="flex flex-col gap-6">
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          label={deleteTarget.label}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
       <div>
         <h1 className="font-serif text-3xl font-bold text-zinc-900">Équipe</h1>
         <p className="text-zinc-500 mt-1 text-sm">Gestion des comptes du personnel</p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
+      <div className="card-base">
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-50">
           <h2 className="font-bold text-zinc-800">{users.length} membre(s)</h2>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-1.5 text-sm font-semibold bg-amber-400 hover:bg-amber-500 text-zinc-900 px-4 py-2 rounded-xl transition-colors"
+            className="btn-primary h-9 px-4"
           >
             <Plus size={15} /> Nouveau membre
           </button>
@@ -71,36 +92,35 @@ export function UsersPageClient({ users: initUsers, currentRole }: {
 
         {showForm && (
           <div className="px-6 py-4 border-b border-zinc-50 bg-zinc-50">
-            {error && <p className="text-sm text-red-600 mb-3 font-medium">{error}</p>}
             <div className="flex flex-wrap gap-3 items-end">
               <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
-                <label className="text-xs font-semibold text-zinc-500">Nom complet</label>
+                <label className="label-base">Nom complet</label>
                 <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                   placeholder="Jean Dupont"
-                  className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+                  className="input-base" />
               </div>
               <div className="flex flex-col gap-1 flex-1 min-w-[170px]">
-                <label className="text-xs font-semibold text-zinc-500">E-mail</label>
+                <label className="label-base">E-mail</label>
                 <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
                   placeholder="jean@larevelation.com"
-                  className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+                  className="input-base" />
               </div>
               <div className="flex flex-col gap-1 w-36">
-                <label className="text-xs font-semibold text-zinc-500">Mot de passe</label>
+                <label className="label-base">Mot de passe</label>
                 <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                   placeholder="••••••••"
-                  className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+                  className="input-base" />
               </div>
               <div className="flex flex-col gap-1 w-40">
-                <label className="text-xs font-semibold text-zinc-500">Rôle</label>
+                <label className="label-base">Rôle</label>
                 <select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}
-                  className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white">
+                  className="select-base">
                   {availableRoles.map(r => <option key={r.v} value={r.v}>{r.l}</option>)}
                 </select>
               </div>
               <button onClick={handleCreate} disabled={isPending}
-                className="h-9 px-4 bg-zinc-900 text-white rounded-xl text-sm font-semibold hover:bg-zinc-700 transition-colors disabled:opacity-50">
-                Créer
+                className="btn-secondary h-10">
+                {isPending ? <><Loader2 size={13} className="animate-spin" /> Traitement...</> : "Créer"}
               </button>
             </div>
           </div>
@@ -118,7 +138,7 @@ export function UsersPageClient({ users: initUsers, currentRole }: {
           </thead>
           <tbody>
             {users.map(u => (
-              <tr key={u.id} className="border-t border-zinc-50 hover:bg-zinc-50">
+              <tr key={u.id} className="border-t border-zinc-50 hover:bg-zinc-50 transition-colors">
                 <td className="px-6 py-3.5 flex items-center gap-2.5">
                   <span className="w-7 h-7 rounded-full bg-amber-50 border border-amber-100 flex items-center justify-center text-xs font-bold text-amber-600 flex-shrink-0">
                     {(u.name || u.email)[0].toUpperCase()}
@@ -136,7 +156,10 @@ export function UsersPageClient({ users: initUsers, currentRole }: {
                 </td>
                 {canDeleteUsers && (
                   <td className="px-6 py-3.5 text-right">
-                    <button onClick={() => handleDelete(u.id)} className="p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <button
+                      onClick={() => setDeleteTarget({ id: u.id, label: u.name || u.email })}
+                      className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-sm transition-colors"
+                    >
                       <Trash2 size={14} />
                     </button>
                   </td>

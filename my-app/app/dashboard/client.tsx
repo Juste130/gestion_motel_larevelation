@@ -8,13 +8,13 @@ function StatCard({ label, value, icon, highlight = false, sub }: {
   highlight?: boolean; sub?: string
 }) {
   return (
-    <div className={`rounded-2xl border p-5 flex items-center gap-4 bg-white shadow-sm transition-shadow hover:shadow-md ${highlight ? "border-amber-200 ring-1 ring-amber-100" : "border-zinc-100"}`}>
+    <div className={`rounded-md border p-5 flex items-center gap-4 bg-white shadow-sm transition-shadow hover:shadow-md ${highlight ? "border-amber-200 ring-1 ring-amber-100" : "border-zinc-100"}`}>
       <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${highlight ? "bg-amber-50" : "bg-zinc-50"}`}>
         {icon}
       </div>
       <div className="min-w-0">
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{label}</p>
-        <p className={`text-2xl font-bold font-mono mt-0.5 truncate ${highlight ? "text-amber-600" : "text-zinc-800"}`}>{value}</p>
+        <p className={`text-md sm:text-lg md:text-2xl font-bold font-mono mt-0.5 truncate ${highlight ? "text-amber-600" : "text-zinc-800"}`}>{value}</p>
         {sub && <p className="text-xs text-zinc-400 mt-0.5">{sub}</p>}
       </div>
     </div>
@@ -35,7 +35,7 @@ export function DashboardClient({ stats, role }: { stats: any; role: string }) {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           label="CA du mois"
           value={formatMoney(stats.totalRevenueMonth)}
@@ -63,7 +63,7 @@ export function DashboardClient({ stats, role }: { stats: any; role: string }) {
 
       {/* Admin/DG: Table par réceptionniste */}
       {isAdmin && stats.revenueByUser.length > 0 && (
-        <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
+        <div className="card-base">
           <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between">
             <h2 className="font-bold text-zinc-800">Performance par réceptionniste — Mois en cours</h2>
             <span className="text-xs bg-zinc-100 text-zinc-500 font-semibold px-2 py-1 rounded-full">
@@ -97,7 +97,7 @@ export function DashboardClient({ stats, role }: { stats: any; role: string }) {
       )}
 
       {/* Alertes stock */}
-      <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-6">
+      <div className="card-base card-body">
         <div className="flex items-center gap-2 mb-1">
           <Package size={16} className="text-zinc-400" />
           <h2 className="font-bold text-zinc-800 text-sm">Catalogue de produits</h2>
