@@ -1,10 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
-import { Lock, ArrowRight } from "lucide-react"
-import { toast } from "sonner"
+import { Lock } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -12,19 +12,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const [mode, setMode] = useState<"login" | "request">("login")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError("")
-
-    if (mode === "request") {
-      toast.success("Demande de compte envoyée à la direction !")
-      setMode("login")
-      setLoading(false)
-      return
-    }
 
     const res: any = await signIn("credentials", {
       redirect: false,
@@ -87,12 +79,10 @@ export default function LoginPage() {
 
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-zinc-800">
-              {mode === "login" ? "Connexion" : "Demande de compte"}
+              Connexion
             </h1>
             <p className="text-zinc-500 text-base mt-2">
-              {mode === "login"
-                ? "Entrez vos identifiants pour accéder à votre espace."
-                : "Remplissez ce formulaire et la direction validera votre accès."}
+              Entrez vos identifiants pour accéder à votre espace.
             </p>
           </div>
 
@@ -116,20 +106,18 @@ export default function LoginPage() {
               />
             </div>
 
-            {mode === "login" && (
-              <div className="flex flex-col gap-2">
-                <label htmlFor="password" className="text-base font-semibold text-zinc-700">Mot de passe</label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="w-full h-12 px-4 text-base rounded-xl border border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all"
-                />
-              </div>
-            )}
+            <div className="flex flex-col gap-2">
+              <label htmlFor="password" className="text-base font-semibold text-zinc-700">Mot de passe</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full h-12 px-4 text-base rounded-xl border border-zinc-200 bg-white text-zinc-800 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-all"
+              />
+            </div>
 
             <button
               type="submit"
@@ -138,29 +126,19 @@ export default function LoginPage() {
             >
               {loading ? (
                 <span className="animate-pulse">Chargement...</span>
-              ) : mode === "login" ? (
+              ) : (
                 <>
                   <Lock size={16} />
                   Se connecter
-                </>
-              ) : (
-                <>
-                  Envoyer la demande
-                  <ArrowRight size={16} />
                 </>
               )}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <button
-              onClick={() => setMode(mode === "login" ? "request" : "login")}
-              className="btn-ghost"
-            >
-              {mode === "login"
-                ? "Demander la création d'un compte"
-                : "← Retour à la connexion"}
-            </button>
+            <Link href="/signup" className="btn-ghost inline-flex items-center justify-center">
+              Demander la création d&apos;un compte
+            </Link>
           </div>
         </div>
       </div>
