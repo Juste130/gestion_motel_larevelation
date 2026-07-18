@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import bcrypt from "bcryptjs"
 import { todayStr } from "@/lib/utils"
+import { validatePassword } from "@/lib/password"
 
 export async function requireAuth() {
   const session = await getServerSession(authOptions)
@@ -144,6 +145,12 @@ export async function createUser(data: { name: string; email: string; password: 
   if (data.role === "ADMIN" && user.role !== "ADMIN") {
     throw new Error("Seul un administrateur peut créer un autre administrateur")
   }
+
+  const passwordValidation = validatePassword(data.password)
+  if (!passwordValidation.isValid) {
+    throw new Error(passwordValidation.message)
+  }
+
   const hashed = await bcrypt.hash(data.password, 10)
   await prisma.user.create({
     data: { name: data.name, email: data.email, password: hashed, role: data.role },

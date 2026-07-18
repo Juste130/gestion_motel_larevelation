@@ -1,26 +1,39 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
-const adapter = new PrismaBetterSqlite3({ url: './dev.db' })
-const prisma = new PrismaClient({ adapter })
+const prisma = new PrismaClient()
 
 async function main() {
-  const adminEmail = 'direction@larevelation.com'
-  const adminPassword = await bcrypt.hash('1234', 10)
+  const adminEmail = 'admin@larevelation.com'
+  const adminPassword = await bcrypt.hash('Admin@2026!', 10)
+  const dgEmail = 'dg@larevelation.com'
+  const dgPassword = await bcrypt.hash('Dg@2026!', 10)
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
     update: {},
     create: {
       email: adminEmail,
-      name: 'Direction Générale',
+      name: 'Administrateur',
       password: adminPassword,
+      role: 'ADMIN',
+    },
+  })
+
+  const dg = await prisma.user.upsert({
+    where: { email: dgEmail },
+    update: {},
+    create: {
+      email: dgEmail,
+      name: 'Direction Générale',
+      password: dgPassword,
       role: 'DG',
     },
   })
 
-  console.log('Utilisateur admin (DG) créé avec succès:', admin.email)
+  console.log('Comptes créés avec succès:')
+  console.log(`- ADMIN: ${admin.email} / Admin@2026!`)
+  console.log(`- DG: ${dg.email} / Dg@2026!`)
   
   // Initialiser les chambres par défaut si elles n'existent pas
   const countRooms = await prisma.room.count();

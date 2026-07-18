@@ -6,6 +6,7 @@ import { Plus, Trash2, Loader2 } from "lucide-react"
 import { createUser, deleteUser } from "@/app/actions/admin"
 import { toast } from "sonner"
 import { ConfirmDeleteModal } from "@/components/confirm-delete-modal"
+import { getPasswordHelpText, validatePassword } from "@/lib/password"
 
 type UserRow = { id: string; name: string | null; email: string; role: string; createdAt: Date }
 
@@ -36,6 +37,13 @@ export function UsersPageClient({ users: initUsers, currentRole }: {
       toast.error("Veuillez remplir tous les champs obligatoires.")
       return
     }
+
+    const passwordValidation = validatePassword(form.password)
+    if (!passwordValidation.isValid) {
+      toast.error(passwordValidation.message)
+      return
+    }
+
     startTransition(async () => {
       try {
         await createUser(form)
@@ -110,6 +118,7 @@ export function UsersPageClient({ users: initUsers, currentRole }: {
                 <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
                   placeholder="••••••••"
                   className="input-base" />
+                <p className="text-[11px] text-zinc-500">{getPasswordHelpText()}</p>
               </div>
               <div className="flex flex-col gap-1 w-40">
                 <label className="label-base">Rôle</label>
