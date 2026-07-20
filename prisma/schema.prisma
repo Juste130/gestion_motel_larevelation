@@ -28,7 +28,7 @@ model User {
 model Room {
   id        String   @id @default(cuid())
   num       String   @unique
-  type      String   // V (VIP), C (Confort), A (Appart)
+  type      String   // V (Ventilée), C (Climée), A (Appart)
   label     String
   price     Float    @default(0)
   createdAt DateTime @default(now())
