@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-import bcrypt from 'bcryptjs'
 import 'dotenv/config'
+import { createAndSendActivation } from '../lib/invitations'
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL,
@@ -9,40 +9,44 @@ const adapter = new PrismaPg({
 
 const prisma = new PrismaClient({ adapter })
 
+/**
+ * Crée (ou récupère) un compte en attente d'activation et lui envoie
+ * l'e-mail d'invitation — exactement le même flux que inviteUser() côté
+ * app/actions/admin.ts, mais utilisable hors contexte de session (script).
+ */
+async function inviteOrSkip(email: string, name: string, role: string) {
+  const existing = await prisma.user.findUnique({ where: { email } })
+
+  if (existing) {
+    console.log(`- ${role}: ${email} existe déjà (statut: ${existing.status}) — invitation non renvoyée.`)
+    return existing
+  }
+
+  const created = await prisma.user.create({
+    data: { email, name, role, status: 'PENDING' },
+  })
+  await createAndSendActivation(created.id, created.name, created.email)
+  console.log(`- ${role}: invitation envoyée à ${email}`)
+  return created
+}
+
 async function main() {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@larevelation.com'
-  const adminPassword = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'Admin@2026!', 10)
-  const dgEmail = process.env.DG_EMAIL || 'dg@larevelation.com'
-  const dgPassword = await bcrypt.hash(process.env.DG_PASSWORD || 'Dg@2026!', 10)
+  const adminEmail = process.env.ADMIN_EMAIL
+  const dgEmail = process.env.DG_EMAIL
 
-  const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {},
-    create: {
-      email: adminEmail,
-      name: 'Administrateur',
-      password: adminPassword,
-      role: 'ADMIN',
-    },
-  })
+  if (!adminEmail || !dgEmail) {
+    throw new Error(
+      "ADMIN_EMAIL et DG_EMAIL doivent être définis dans .env avec de vraies adresses e-mail (les invitations y seront envoyées)."
+    )
+  }
 
-  const dg = await prisma.user.upsert({
-    where: { email: dgEmail },
-    update: {},
-    create: {
-      email: dgEmail,
-      name: 'Direction Générale',
-      password: dgPassword,
-      role: 'DG',
-    },
-  })
+  console.log('Envoi des invitations...')
+  await inviteOrSkip(adminEmail, 'Administrateur', 'ADMIN')
+  await inviteOrSkip(dgEmail, 'Direction Générale', 'DG')
+  console.log('Chaque destinataire doit consulter sa boîte mail et suivre le lien pour activer son compte (mot de passe ou Google).')
 
-  console.log('Comptes créés avec succès:')
-  console.log(`- ADMIN: ${admin.email} / Admin@2026!`)
-  console.log(`- DG: ${dg.email} / Dg@2026!`)
-  
   // Initialiser les chambres par défaut si elles n'existent pas
-  const countRooms = await prisma.room.count();
+  const countRooms = await prisma.room.count()
   if (countRooms === 0) {
     await prisma.room.createMany({
       data: [
@@ -75,13 +79,13 @@ async function main() {
         { num: '27', type: 'A', label: 'Appart' },
         { num: '28', type: 'A', label: 'Appart' },
         { num: '29', type: 'A', label: 'Appart' },
-      ]
+      ],
     })
     console.log('Chambres par défaut créées.')
   }
 
   // Initialiser les boissons par défaut si elles n'existent pas
-  const countDrinks = await prisma.product.count({ where: { category: 'DRINK' } });
+  const countDrinks = await prisma.product.count({ where: { category: 'DRINK' } })
   if (countDrinks === 0) {
     await prisma.product.createMany({
       data: [
@@ -94,17 +98,18 @@ async function main() {
         { name: 'Sucrerie', price: 600, stock: 50, category: 'DRINK' },
         { name: 'Fifa', price: 600, stock: 50, category: 'DRINK' },
         { name: 'Heineken', price: 1000, stock: 50, category: 'DRINK' },
-      ]
+      ],
     })
     console.log('Boissons par défaut créées.')
   }
+
   // Initialiser les préservatifs par défaut si ils n'existent pas
-  const countCondoms = await prisma.product.count({ where: { category: 'CONDOM' } });
+  const countCondoms = await prisma.product.count({ where: { category: 'CONDOM' } })
   if (countCondoms === 0) {
     await prisma.product.createMany({
       data: [
         { name: 'Kiss', price: 300, stock: 50, category: 'CONDOM' },
-      ]
+      ],
     })
     console.log('Préservatifs par défaut créés.')
   }

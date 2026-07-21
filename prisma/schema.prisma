@@ -25,6 +25,7 @@ model User {
   stockMovements StockMovement[]
   closures       Closure[] @relation("ClosureUser")
   validations    Closure[] @relation("ClosureValidator")
+  activationTokens ActivationToken[]
 }
 
 model ActivationToken {

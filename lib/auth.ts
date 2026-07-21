@@ -82,9 +82,9 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     // Refuse toute connexion Google dont l'e-mail ne correspond à aucun
     // compte déjà créé/invité par l'admin/DG via la page "Équipe".
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider === "google") {
-        if (!user.email) return false;
+        if (!user.email || !(profile as any)?.email_verified) return false;
         const existing = await prisma.user.findUnique({ where: { email: user.email } });
         if (!existing) return false;
 
