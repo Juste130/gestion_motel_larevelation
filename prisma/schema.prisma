@@ -145,6 +145,29 @@ model Closure {
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@unique([userId, date, type])
+}
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  email      String
+  code       String
+  purpose    String    // 'LOGIN' or 'SIGNUP'
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, purpose])
+}
+
+model AccessRequest {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String?
+  status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt DateTime @default(now())
 }
 
 model AuditLog {

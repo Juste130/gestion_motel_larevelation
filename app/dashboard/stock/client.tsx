@@ -83,10 +83,10 @@ export function StockPageClient({ products, movements, role }: {
       </div>
 
       {/* Stock value banner */}
-      <div className="bg-gradient-to-r from-zinc-800 to-zinc-600 rounded-md p-5 text-white flex items-center justify-between">
-        <div>
+      <div className="bg-gradient-to-r from-zinc-800 to-zinc-600 rounded-md p-5 text-white flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
           <p className="text-zinc-300 text-xs font-semibold uppercase tracking-wider">Valeur totale du stock</p>
-          <p className="text-3xl font-bold font-mono mt-1">{formatMoney(stockValue)}</p>
+          <p className="text-3xl font-bold font-mono mt-1 truncate">{formatMoney(stockValue)}</p>
         </div>
         {canAdd && (
           <button
@@ -171,7 +171,8 @@ export function StockPageClient({ products, movements, role }: {
               <h2 className="font-bold text-zinc-800">{CATEGORIES[cat]?.label}</h2>
               <span className="ml-auto text-xs font-semibold text-zinc-400">{catProducts.length} article(s)</span>
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[520px]">
               <thead>
                 <tr className="bg-zinc-50 text-xs font-bold text-zinc-400 uppercase tracking-wider">
                   <th className="text-left px-6 py-3">Produit</th>
@@ -199,6 +200,7 @@ export function StockPageClient({ products, movements, role }: {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )
       })}
@@ -240,8 +242,8 @@ export function StockPageClient({ products, movements, role }: {
                   </div>
                 </button>
                 {expandedDate === date && (
-                  <div className="px-6 pb-3">
-                    <table className="w-full text-sm">
+                  <div className="px-6 pb-3 overflow-x-auto">
+                    <table className="w-full text-sm min-w-[480px]">
                       <thead>
                         <tr className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
                           <th className="text-left py-2">Produit</th>

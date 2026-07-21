@@ -183,51 +183,11 @@ export async function getClosures() {
   })
 }
 
-export async function generateDailyClosure() {
+export async function getLiveDailySummary() {
   const { user } = await requireAuth()
-  if (user.role === "DG") throw new Error("Le DG ne génère pas de clôture journalière")
-
-  const today = todayStr()
-  
-  return await prisma.$transaction(async (tx) => {
-    const entries = await tx.entry.findMany({ where: { closureId: null, userId: user.id } })
-    const entryTotal = entries.reduce((acc, curr) => acc + curr.total, 0)
-
-    const cashMovements = await tx.cashMovement.findMany({ where: { closureId: null, userId: user.id } })
-    const recettes = cashMovements.filter(m => m.type === "recette").reduce((acc, curr) => acc + curr.amount, 0)
-    const depenses = cashMovements.filter(m => m.type === "depense").reduce((acc, curr) => acc + curr.amount, 0)
-
-    const expectedAmount = entryTotal + recettes - depenses
-
-    if (entries.length === 0 && cashMovements.length === 0) {
-      throw new Error("Aucun mouvement à clôturer pour cette session.")
-    }
-
-    const closure = await tx.closure.create({
-      data: {
-        date: today,
-        type: "DAILY",
-        userId: user.id,
-        expectedAmount,
-      }
-    })
-    
-    if (entries.length > 0) {
-      await tx.entry.updateMany({
-        where: { id: { in: entries.map(e => e.id) } },
-        data: { closureId: closure.id }
-      })
-    }
-
-    if (cashMovements.length > 0) {
-      await tx.cashMovement.updateMany({
-        where: { id: { in: cashMovements.map(m => m.id) } },
-        data: { closureId: closure.id }
-      })
-    }
-
-    return closure
-  })
+  if (user.role === "DG") return null // Le DG n'a pas de "journée en cours" personnelle
+  const { computeLiveDailySnapshot } = await import("@/lib/closures")
+  return computeLiveDailySnapshot(user.id, todayStr())
 }
 
 export async function validateClosure(id: string, handedAmount: number, comments?: string) {
@@ -235,6 +195,9 @@ export async function validateClosure(id: string, handedAmount: number, comments
   
   const closure = await prisma.closure.findUnique({ where: { id } })
   if (!closure) throw new Error("Bilan introuvable")
+  if (closure.type !== "WEEKLY") {
+    throw new Error("Seul le bilan hebdomadaire fait l'objet d'une remise à valider.")
+  }
   
   const discrepancy = handedAmount - closure.expectedAmount
   
