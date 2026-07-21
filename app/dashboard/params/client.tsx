@@ -100,7 +100,8 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
             </button>
           </div>
         )}
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[480px]">
           <thead>
             <tr className="bg-zinc-50 text-xs font-bold text-zinc-400 uppercase tracking-wider">
               <th className="text-left px-6 py-3">Numéro</th>
@@ -129,6 +130,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Produits */}
@@ -171,7 +173,8 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
             </button>
           </div>
         )}
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
           <thead>
             <tr className="bg-zinc-50 text-xs font-bold text-zinc-400 uppercase tracking-wider">
               <th className="text-left px-6 py-3">Nom</th>
@@ -212,6 +215,7 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

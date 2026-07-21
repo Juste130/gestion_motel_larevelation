@@ -10,19 +10,32 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String?
-  email     String   @unique
-  password  String
-  role      String   @default("RECEPTIONIST") // ADMIN, DG, RECEPTIONIST
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String?
+  email       String   @unique
+  password    String?   // nullable désormais
+  authMethod  String?   // 'CREDENTIALS' | 'GOOGLE' — null tant que non activé
+  status      String    @default("PENDING") // PENDING, ACTIVE
+  role        String   @default("RECEPTIONIST") // ADMIN, DG, RECEPTIONIST
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
   entries        Entry[]
   cashMovements  CashMovement[]
   stockMovements StockMovement[]
   closures       Closure[] @relation("ClosureUser")
   validations    Closure[] @relation("ClosureValidator")
+  activationTokens ActivationToken[]
+}
+
+model ActivationToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique   // sha256 du vrai token, jamais le token en clair en base
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 }
 
 model Room {
@@ -145,6 +158,29 @@ model Closure {
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@unique([userId, date, type])
+}
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  email      String
+  code       String
+  purpose    String    // 'LOGIN' or 'SIGNUP'
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email, purpose])
+}
+
+model AccessRequest {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String?
+  status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt DateTime @default(now())
 }
 
 model AuditLog {

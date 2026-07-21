@@ -1,6 +1,7 @@
 import { SidebarLayout } from "@/components/sidebar-layout"
 import { requireSession, getRole } from "@/lib/session"
 import { prisma } from "@/lib/prisma"
+import { IdleLogout } from "@/components/idle-logout"
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession()
@@ -15,5 +16,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     where: { stock: { lte: 3 } }
   })
 
-  return <SidebarLayout user={user} lowStockCount={lowStockCount}>{children}</SidebarLayout>
+  return (
+    <>
+      <IdleLogout />
+      <SidebarLayout user={user} lowStockCount={lowStockCount}>{children}</SidebarLayout>
+    </>
+  )
 }

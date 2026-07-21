@@ -1,8 +1,9 @@
 import { NextAuthOptions, Session, User } from "next-auth";
 import { JWT } from "next-auth/jwt";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "./prisma";
-import bcrypt from "bcryptjs";
+import { verifyOtp } from "./otp";
 import 'dotenv/config';
 
 // Extend next-auth types to include role and id
@@ -38,33 +39,29 @@ export const authOptions: NextAuthOptions = {
     error: "/login",
   },
   providers: [
+    // Étape 2 de la connexion : le mot de passe a déjà été vérifié par
+    // requestLoginOtp() (server action) avant que ce provider ne soit appelé.
+    // Ici on ne vérifie plus que le code OTP reçu par e-mail.
     CredentialsProvider({
-      name: "Credentials",
+      name: "Code de connexion",
       credentials: {
-        email: { label: "Email", type: "email", placeholder: "vous@exemple.com" },
-        password: { label: "Mot de passe", type: "password" }
+        email: { label: "Email", type: "email" },
+        code: { label: "Code", type: "text" },
       },
       async authorize(credentials): Promise<User | null> {
-        if (!credentials?.email || !credentials?.password) {
+        if (!credentials?.email || !credentials?.code) {
+          return null;
+        }
+
+        const isCodeValid = await verifyOtp(credentials.email, credentials.code, "LOGIN");
+        if (!isCodeValid) {
           return null;
         }
 
         const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email
-          }
+          where: { email: credentials.email }
         });
-
         if (!user) {
-          return null;
-        }
-
-        const isPasswordValid = await bcrypt.compare(
-          credentials.password,
-          user.password
-        );
-
-        if (!isPasswordValid) {
           return null;
         }
 
@@ -75,13 +72,50 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
         };
       }
-    })
+    }),
+
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
   ],
   callbacks: {
-    async jwt({ token, user }: { token: JWT; user?: User }) {
+    // Refuse toute connexion Google dont l'e-mail ne correspond à aucun
+    // compte déjà créé/invité par l'admin/DG via la page "Équipe".
+    async signIn({ user, account, profile }) {
+      if (account?.provider === "google") {
+        if (!user.email || !(profile as any)?.email_verified) return false;
+        const existing = await prisma.user.findUnique({ where: { email: user.email } });
+        if (!existing) return false;
+
+        // Compte encore en attente d'activation : Google prouve la propriété
+        // de l'e-mail, on active donc directement le compte avec cette méthode.
+        if (existing.status === "PENDING") {
+          await prisma.user.update({
+            where: { id: existing.id },
+            data: { status: "ACTIVE", authMethod: "GOOGLE" },
+          });
+          return true;
+        }
+
+        // Compte déjà activé avec un mot de passe : une méthode par compte,
+        // choisie une fois pour toutes — on refuse et on renvoie vers /login.
+        if (existing.authMethod === "CREDENTIALS") return false;
+      }
+      return true;
+    },
+    async jwt({ token, user, account }: { token: JWT; user?: User; account?: { provider: string } | null }) {
       if (user) {
-        token.role = user.role;
-        token.id = user.id;
+        if (account?.provider === "google") {
+          const dbUser = await prisma.user.findUnique({ where: { email: user.email! } });
+          if (dbUser) {
+            token.role = dbUser.role;
+            token.id = dbUser.id;
+          }
+        } else {
+          token.role = user.role;
+          token.id = user.id;
+        }
       }
       return token;
     },

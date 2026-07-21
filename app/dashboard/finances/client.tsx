@@ -225,7 +225,8 @@ export function FinancesClient({ movements: initMovements, role }: {
           </div>
         )}
 
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="bg-zinc-50 text-xs font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-100">
               <th className="text-left px-6 py-3">Date</th>
@@ -292,10 +293,8 @@ export function FinancesClient({ movements: initMovements, role }: {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )
 }
-
-
-
