@@ -81,12 +81,26 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     // Refuse toute connexion Google dont l'e-mail ne correspond à aucun
-    // compte déjà créé par l'admin/DG via la page "Équipe".
+    // compte déjà créé/invité par l'admin/DG via la page "Équipe".
     async signIn({ user, account }) {
       if (account?.provider === "google") {
         if (!user.email) return false;
         const existing = await prisma.user.findUnique({ where: { email: user.email } });
         if (!existing) return false;
+
+        // Compte encore en attente d'activation : Google prouve la propriété
+        // de l'e-mail, on active donc directement le compte avec cette méthode.
+        if (existing.status === "PENDING") {
+          await prisma.user.update({
+            where: { id: existing.id },
+            data: { status: "ACTIVE", authMethod: "GOOGLE" },
+          });
+          return true;
+        }
+
+        // Compte déjà activé avec un mot de passe : une méthode par compte,
+        // choisie une fois pour toutes — on refuse et on renvoie vers /login.
+        if (existing.authMethod === "CREDENTIALS") return false;
       }
       return true;
     },

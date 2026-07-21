@@ -4,9 +4,8 @@ import { prisma } from "@/lib/prisma"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
-import bcrypt from "bcryptjs"
 import { todayStr } from "@/lib/utils"
-import { validatePassword } from "@/lib/password"
+import { createAndSendActivation } from "@/lib/invitations"
 
 export async function requireAuth() {
   const session = await getServerSession(authOptions)
@@ -135,32 +134,86 @@ export async function deleteCashMovement(id: string) {
 export async function getUsers() {
   await requireAdminOrDG()
   return prisma.user.findMany({
-    select: { id: true, name: true, email: true, role: true, createdAt: true },
+    select: { id: true, name: true, email: true, role: true, status: true, authMethod: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   })
 }
 
-export async function createUser(data: { name: string; email: string; password: string; role: string }) {
+/**
+ * Invite un nouveau membre : aucun mot de passe n'est défini par l'admin/DG.
+ * Le compte est créé en statut PENDING et un e-mail d'activation est envoyé
+ * à l'utilisateur, qui choisit lui-même mot de passe ou connexion Google.
+ */
+export async function inviteUser(data: { name: string; email: string; role: string }) {
   const { user } = await requireAdminOrDG()
   if (data.role === "ADMIN" && user.role !== "ADMIN") {
     throw new Error("Seul un administrateur peut créer un autre administrateur")
   }
 
-  const passwordValidation = validatePassword(data.password)
-  if (!passwordValidation.isValid) {
-    throw new Error(passwordValidation.message)
-  }
+  const existing = await prisma.user.findUnique({ where: { email: data.email } })
+  if (existing) throw new Error("Un compte existe déjà avec cet e-mail.")
 
-  const hashed = await bcrypt.hash(data.password, 10)
-  await prisma.user.create({
-    data: { name: data.name, email: data.email, password: hashed, role: data.role },
+  const created = await prisma.user.create({
+    data: { name: data.name, email: data.email, role: data.role, status: "PENDING" },
   })
+  await createAndSendActivation(created.id, created.name, created.email)
+  revalidatePath("/dashboard", "layout")
+}
+
+/** Renvoie un nouveau lien d'activation (invalide l'ancien) pour un compte encore PENDING */
+export async function resendInvitation(id: string) {
+  await requireAdminOrDG()
+  const target = await prisma.user.findUnique({ where: { id } })
+  if (!target) throw new Error("Compte introuvable")
+  if (target.status !== "PENDING") throw new Error("Ce compte est déjà actif.")
+
+  await createAndSendActivation(target.id, target.name, target.email)
   revalidatePath("/dashboard", "layout")
 }
 
 export async function deleteUser(id: string) {
   await requireAdmin()
   await prisma.user.delete({ where: { id } })
+  revalidatePath("/dashboard", "layout")
+}
+
+// ─── ACCESS REQUESTS (Demandes d'accès) ───────────────────────────
+export async function getAccessRequests() {
+  await requireAdminOrDG()
+  return prisma.accessRequest.findMany({
+    where: { status: "PENDING" },
+    orderBy: { createdAt: "asc" },
+  })
+}
+
+/** Approuve une demande : crée le compte PENDING et envoie le lien d'activation */
+export async function approveAccessRequest(id: string, role: string) {
+  const { user } = await requireAdminOrDG()
+  if (role === "ADMIN" && user.role !== "ADMIN") {
+    throw new Error("Seul un administrateur peut créer un autre administrateur")
+  }
+
+  const request = await prisma.accessRequest.findUnique({ where: { id } })
+  if (!request) throw new Error("Demande introuvable")
+  if (request.status !== "PENDING") throw new Error("Cette demande a déjà été traitée.")
+
+  const existing = await prisma.user.findUnique({ where: { email: request.email } })
+  if (existing) throw new Error("Un compte existe déjà avec cet e-mail.")
+
+  const created = await prisma.$transaction(async (tx) => {
+    const newUser = await tx.user.create({
+      data: { name: request.name, email: request.email, role, status: "PENDING" },
+    })
+    await tx.accessRequest.update({ where: { id }, data: { status: "APPROVED" } })
+    return newUser
+  })
+  await createAndSendActivation(created.id, created.name, created.email)
+  revalidatePath("/dashboard", "layout")
+}
+
+export async function rejectAccessRequest(id: string) {
+  await requireAdminOrDG()
+  await prisma.accessRequest.update({ where: { id }, data: { status: "REJECTED" } })
   revalidatePath("/dashboard", "layout")
 }
 
