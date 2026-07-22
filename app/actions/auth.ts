@@ -3,7 +3,7 @@
 import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
 import { createAndSendOtp, verifyOtp } from "@/lib/otp"
-import { checkActivationToken, consumeActivationToken } from "@/lib/invitations"
+import { checkActivationToken, consumeActivationToken, issueGoogleActivationTicket } from "@/lib/invitations"
 import { validatePassword } from "@/lib/password"
 
 // --- Étape 1 de la connexion : vérifie email + mot de passe, puis envoie l'OTP ---
@@ -28,6 +28,20 @@ export async function requestLoginOtp(email: string, password: string) {
 // --- Activation d'un compte invité : vérifie le token puis affiche l'identité du compte ---
 export async function getActivationInfo(token: string) {
   return checkActivationToken(token)
+}
+
+// --- Étape préalable à l'activation par Google : dépose la preuve d'origine (cookie), à appeler juste avant signIn("google") ---
+export async function beginGoogleActivation(token: string) {
+  const check = await issueGoogleActivationTicket(token)
+  if (!check.ok) {
+    const messages = {
+      invalid: "Lien d'activation invalide.",
+      expired: "Ce lien d'activation a expiré. Demandez à un administrateur de vous en renvoyer un.",
+      already_active: "Ce compte est déjà activé.",
+    } as const
+    return { ok: false, error: messages[check.reason] }
+  }
+  return { ok: true }
 }
 
 // --- Activation par mot de passe : étape finale du flux d'invitation ---
