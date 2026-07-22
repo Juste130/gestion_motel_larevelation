@@ -1,9 +1,7 @@
 import { prisma } from "./prisma"
-import { Resend } from "resend"
+import { sendEmail } from "./mailer"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const OTP_TTL_MS = 5 * 60 * 1000 // 5 minutes
-const FROM_EMAIL = process.env.OTP_FROM_EMAIL || "onboarding@resend.dev"
 
 function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString()
@@ -18,8 +16,7 @@ export async function createAndSendOtp(email: string, purpose: "LOGIN" | "SIGNUP
 
   const subject = purpose === "LOGIN" ? "Votre code de connexion" : "Vérification de votre adresse e-mail"
 
-  await resend.emails.send({
-    from: FROM_EMAIL,
+  await sendEmail({
     to: email,
     subject,
     html: `

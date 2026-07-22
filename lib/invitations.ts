@@ -1,9 +1,7 @@
 import crypto from "crypto"
-import { Resend } from "resend"
 import { prisma } from "./prisma"
+import { sendEmail } from "./mailer"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-const FROM_EMAIL = process.env.OTP_FROM_EMAIL || "onboarding@resend.dev"
 const ACTIVATION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 jours
 
 function baseUrl() {
@@ -39,8 +37,7 @@ export async function createAndSendActivation(userId: string, name: string | nul
 
   const activationUrl = `${baseUrl()}/activate/${token}`
 
-  await resend.emails.send({
-    from: FROM_EMAIL,
+  await sendEmail({
     to: email,
     subject: "Votre compte La Révélation — Gestion",
     html: `
