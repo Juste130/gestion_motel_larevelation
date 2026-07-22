@@ -57,7 +57,7 @@ export function BilansPageClient({ closures, role, liveSummary }: {
       {/* Point du jour — calcul EN DIRECT, non figé, aucune action requise */}
       {liveSummary && (
         <div className="rounded-md border border-amber-200 bg-amber-50/60 p-5">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
             <TrendingUp size={16} className="text-amber-600" />
             <h2 className="font-bold text-zinc-800 text-sm">Point du jour en cours ({liveSummary.date})</h2>
             <span className="ml-auto text-[11px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full font-semibold">
@@ -65,21 +65,21 @@ export function BilansPageClient({ closures, role, liveSummary }: {
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Séjours enregistrés</p>
-              <p className="font-mono font-bold text-zinc-800">{liveSummary.entriesCount}</p>
+              <p className="font-mono font-bold text-zinc-800 truncate">{liveSummary.entriesCount}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Recettes caisse</p>
-              <p className="font-mono font-bold text-emerald-600">{formatMoney(liveSummary.recettes)}</p>
+              <p className="font-mono font-bold text-emerald-600 truncate">{formatMoney(liveSummary.recettes)}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Dépenses caisse</p>
-              <p className="font-mono font-bold text-rose-500">{formatMoney(liveSummary.depenses)}</p>
+              <p className="font-mono font-bold text-rose-500 truncate">{formatMoney(liveSummary.depenses)}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Total attendu (provisoire)</p>
-              <p className="font-mono font-bold text-zinc-900">{formatMoney(liveSummary.expectedAmount)}</p>
+              <p className="font-mono font-bold text-zinc-900 truncate">{formatMoney(liveSummary.expectedAmount)}</p>
             </div>
           </div>
         </div>

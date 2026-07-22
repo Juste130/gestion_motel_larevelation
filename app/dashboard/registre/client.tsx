@@ -110,7 +110,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           <h1 className="font-serif text-3xl font-bold text-zinc-900">Registre & Séjours</h1>
           <p className="text-zinc-500 mt-1 text-sm">Suivi des entrées et séjours du jour</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <input
               type="date"
@@ -144,13 +144,13 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card-base card-body flex flex-col justify-center">
+        <div className="card-base card-body flex flex-col justify-center min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Total recettes</p>
-          <p className="text-2xl font-bold font-mono text-zinc-800 mt-1">{formatMoney(totalRecettes)}</p>
+          <p className="text-lg sm:text-2xl font-bold font-mono text-zinc-800 mt-1 truncate">{formatMoney(totalRecettes)}</p>
         </div>
-        <div className="card-base card-body flex flex-col justify-center">
+        <div className="card-base card-body flex flex-col justify-center min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Séjours</p>
-          <p className="text-2xl font-bold font-mono text-zinc-800 mt-1">{entries.length}</p>
+          <p className="text-lg sm:text-2xl font-bold font-mono text-zinc-800 mt-1 truncate">{entries.length}</p>
         </div>
       </div>
 

@@ -189,8 +189,8 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
               Consommations (Produits)
             </h3>
             <div className="p-5 bg-secondary/40 rounded-md border border-border/50">
-              <div className="flex gap-3 items-end">
-                <div className="flex-1 flex flex-col gap-1.5">
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="flex-1 min-w-[140px] flex flex-col gap-1.5">
                   <label className="label-base">Produit</label>
                   <select value={productPick} onChange={(e) => setProductPick(e.target.value)} className={selectClasses}>
                     <option value="">Sélectionner un produit...</option>
@@ -199,11 +199,11 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
                     ))}
                   </select>
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1.5 w-20 flex-shrink-0">
                   <label className="label-base">Qté</label>
-                  <input type="number" min={1} value={productQty} onChange={(e) => setProductQty(Number(e.target.value))} className="input-base" />
+                  <input type="number" inputMode="numeric" min={1} value={productQty} onChange={(e) => setProductQty(Number(e.target.value))} className="input-base" />
                 </div>
-                <button onClick={addProduct} className="btn-secondary px-4 self-end h-10">
+                <button onClick={addProduct} className="btn-secondary px-4 h-10 flex-shrink-0">
                   <Plus size={18} /> Ajouter
                 </button>
               </div>

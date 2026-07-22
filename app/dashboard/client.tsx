@@ -207,21 +207,21 @@ export function DashboardClient({ stats, role, liveSummary }: { stats: any; role
         <Card>
           <h2 className="font-bold text-zinc-800 text-sm mb-4">Votre journée en cours ({liveSummary.date})</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Séjours</p>
-              <p className="font-mono font-bold text-zinc-800">{liveSummary.entriesCount}</p>
+              <p className="font-mono font-bold text-zinc-800 truncate">{liveSummary.entriesCount}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Recettes</p>
-              <p className="font-mono font-bold text-emerald-600">{formatMoney(liveSummary.recettes)}</p>
+              <p className="font-mono font-bold text-emerald-600 truncate">{formatMoney(liveSummary.recettes)}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Dépenses</p>
-              <p className="font-mono font-bold text-rose-500">{formatMoney(liveSummary.depenses)}</p>
+              <p className="font-mono font-bold text-rose-500 truncate">{formatMoney(liveSummary.depenses)}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs text-zinc-500">Total attendu</p>
-              <p className="font-mono font-bold text-zinc-900">{formatMoney(liveSummary.expectedAmount)}</p>
+              <p className="font-mono font-bold text-zinc-900 truncate">{formatMoney(liveSummary.expectedAmount)}</p>
             </div>
           </div>
         </Card>
