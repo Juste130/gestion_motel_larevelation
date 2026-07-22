@@ -32,7 +32,7 @@ model ActivationToken {
   id         String    @id @default(cuid())
   tokenHash  String    @unique   // sha256 du vrai token, jamais le token en clair en base
   userId     String
-  user       User      @relation(fields: [userId], references: [id])
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
