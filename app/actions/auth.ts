@@ -77,3 +77,48 @@ export async function submitAccessRequest(name: string, email: string, code: str
   await prisma.accessRequest.create({ data: { name, email, message } })
   return { ok: true }
 }
+
+// --- Mot de passe oublié : Étape 1, demande de réinitialisation ---
+export async function requestPasswordReset(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } })
+  if (!user || user.status !== "ACTIVE" || !user.password) {
+    // Pour des raisons de sécurité, ne pas divulguer si l'email existe
+    return { ok: true }
+  }
+
+  const { createAndSendPasswordReset } = await import("@/lib/password-reset")
+  await createAndSendPasswordReset(user.id, user.name, user.email)
+  return { ok: true }
+}
+
+// --- Mot de passe oublié : Étape 2, modification du mot de passe avec le token ---
+export async function resetPasswordWithToken(token: string, password: string, confirmPassword: string) {
+  const { checkPasswordResetToken, consumePasswordResetToken } = await import("@/lib/password-reset")
+  const check = await checkPasswordResetToken(token)
+
+  if (!check.ok) {
+    const messages = {
+      invalid: "Lien de réinitialisation invalide.",
+      expired: "Ce lien a expiré. Veuillez refaire une demande de réinitialisation.",
+    } as const
+    return { ok: false, error: messages[check.reason] }
+  }
+
+  if (password !== confirmPassword) {
+    return { ok: false, error: "Les mots de passe ne correspondent pas." }
+  }
+
+  const passwordValidation = validatePassword(password)
+  if (!passwordValidation.isValid) {
+    return { ok: false, error: passwordValidation.message }
+  }
+
+  const hashed = await bcrypt.hash(password, 10)
+  await prisma.user.update({
+    where: { id: check.userId },
+    data: { password: hashed },
+  })
+
+  await consumePasswordResetToken(token)
+  return { ok: true }
+}

@@ -5,13 +5,20 @@ import { Plus, X, Check, BedDouble, ShoppingCart, Receipt } from "lucide-react"
 import { formatMoney, computeDuration, getBeninTime } from "@/lib/utils"
 import { toast } from "sonner"
 
-export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
+export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave }: any) {
   const products = drinks // On renomme en local
+  
+  // Ensemble des numéros de chambres actuellement occupées (séjour non clôturé)
+  const occupiedSet = new Set((entries || []).filter((e: any) => !e.departure).map((e: any) => e.roomNum))
+  
+  // Sélectionner la première chambre disponible par défaut
+  const firstAvailableRoom = rooms.find((r: any) => !occupiedSet.has(r.num)) || rooms[0]
+
   const [receiptNo, setReceiptNo] = useState("")
-  const [roomNum, setRoomNum] = useState(rooms[0]?.num || "")
+  const [roomNum, setRoomNum] = useState(firstAvailableRoom?.num || "")
   const [arrival, setArrival] = useState("")
   const [departure, setDeparture] = useState("")
-  const [roomAmount, setRoomAmount] = useState(rooms[0]?.price?.toString() || "")
+  const [roomAmount, setRoomAmount] = useState(firstAvailableRoom?.price?.toString() || "")
   const [condomAmount, setCondomAmount] = useState("")
   const [selectedProducts, setSelectedProducts] = useState<any[]>([])
   const [productPick, setProductPick] = useState("")
@@ -59,6 +66,10 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
   function submit() {
     if (!roomNum) {
       toast.error("Veuillez sélectionner une chambre.")
+      return
+    }
+    if (occupiedSet.has(roomNum)) {
+      toast.error(`La chambre ${roomNum} est actuellement occupée. Veuillez d'abord clôturer le séjour en cours.`)
       return
     }
     if (!arrival) {
@@ -141,9 +152,14 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
                   }} 
                   className={selectClasses}
                 >
-                  {rooms.map((r: any) => (
-                    <option key={r.id} value={r.num}>Ch. {r.num} — {r.label}</option>
-                  ))}
+                  {rooms.map((r: any) => {
+                    const isOccupied = occupiedSet.has(r.num)
+                    return (
+                      <option key={r.id} value={r.num} disabled={isOccupied}>
+                        Ch. {r.num} — {r.label} {isOccupied ? "— (Actuellement occupée)" : ""}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
               

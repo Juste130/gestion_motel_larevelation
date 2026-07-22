@@ -26,6 +26,7 @@ model User {
   closures       Closure[] @relation("ClosureUser")
   validations    Closure[] @relation("ClosureValidator")
   activationTokens ActivationToken[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 model ActivationToken {
@@ -167,11 +168,22 @@ model OtpCode {
   email      String
   code       String
   purpose    String    // 'LOGIN' or 'SIGNUP'
+  attempts   Int       @default(0)
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([email, purpose])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 }
 
 model AccessRequest {

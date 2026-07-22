@@ -159,6 +159,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           rooms={rooms}
           drinks={products}
           date={currentDate}
+          entries={entries}
           onCancel={() => setShowForm(false)}
           onSave={handleSaveEntry}
         />

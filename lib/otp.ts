@@ -2,6 +2,7 @@ import { prisma } from "./prisma"
 import { sendEmail } from "./mailer"
 
 const OTP_TTL_MS = 5 * 60 * 1000 // 5 minutes
+export const MAX_OTP_ATTEMPTS = 5
 
 function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString()
@@ -32,11 +33,33 @@ export async function createAndSendOtp(email: string, purpose: "LOGIN" | "SIGNUP
 
 export async function verifyOtp(email: string, code: string, purpose: "LOGIN" | "SIGNUP") {
   const otp = await prisma.otpCode.findFirst({
-    where: { email, code, purpose, consumedAt: null, expiresAt: { gt: new Date() } },
+    where: { email, purpose, consumedAt: null, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: "desc" },
   })
+
   if (!otp) return false
 
+  // Bloquer si le nombre max de tentatives a été atteint
+  if (otp.attempts >= MAX_OTP_ATTEMPTS) {
+    await prisma.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } })
+    return false
+  }
+
+  // Vérifier la correspondance du code
+  if (otp.code !== code) {
+    const updatedAttempts = otp.attempts + 1
+    await prisma.otpCode.update({
+      where: { id: otp.id },
+      data: {
+        attempts: updatedAttempts,
+        // Invalider immédiatement si la 5ème tentative a échoué
+        ...(updatedAttempts >= MAX_OTP_ATTEMPTS ? { consumedAt: new Date() } : {}),
+      },
+    })
+    return false
+  }
+
+  // Code valide : marquer comme consommé
   await prisma.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } })
   return true
 }

@@ -1,16 +1,21 @@
 "use server"
 
 import { prisma } from "@/lib/prisma"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
 import { todayStr } from "@/lib/utils"
 import { createAndSendActivation } from "@/lib/invitations"
+import { getSessionUser } from "@/lib/session"
+import {
+  roomSchema,
+  productSchema,
+  stockMovementSchema,
+  cashMovementSchema,
+  inviteUserSchema,
+} from "@/lib/validations"
 
 export async function requireAuth() {
-  const session = await getServerSession(authOptions)
-  if (!session) throw new Error("Non autorisé")
-  return { session, user: session.user as any }
+  const { session, user } = await getSessionUser()
+  return { session, user }
 }
 
 export async function requireAdmin() {
@@ -27,27 +32,75 @@ export async function requireAdminOrDG() {
 
 // ─── CATALOG : Rooms ─────────────────────────────────────────────
 export async function addRoom(data: { num: string; type: string; label: string; price: number }) {
-  await requireAdminOrDG()
-  await prisma.room.create({ data })
+  const { user } = await requireAdminOrDG()
+  const validated = roomSchema.parse(data)
+  
+  const room = await prisma.room.create({ data: validated })
+
+  await prisma.auditLog.create({
+    data: {
+      action: "CREATE_ROOM",
+      entityId: room.id,
+      details: `Création chambre ${room.num} (${room.label}) - ${room.price} FCFA`,
+      userId: user.id,
+    },
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
 export async function deleteRoom(id: string) {
-  await requireAdmin()
+  const { user } = await requireAdmin()
+  const target = await prisma.room.findUnique({ where: { id } })
+  
   await prisma.room.delete({ where: { id } })
+
+  await prisma.auditLog.create({
+    data: {
+      action: "DELETE_ROOM",
+      entityId: id,
+      details: `Suppression chambre ${target?.num || id}`,
+      userId: user.id,
+    },
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
 // ─── CATALOG : Products ──────────────────────────────────────────
 export async function addProduct(data: { name: string; category: string; price: number; stock: number }) {
-  await requireAdminOrDG()
-  await prisma.product.create({ data })
+  const { user } = await requireAdminOrDG()
+  const validated = productSchema.parse(data)
+
+  const product = await prisma.product.create({ data: validated })
+
+  await prisma.auditLog.create({
+    data: {
+      action: "CREATE_PRODUCT",
+      entityId: product.id,
+      details: `Création produit ${product.name} - ${product.price} FCFA (Stock initial: ${product.stock})`,
+      userId: user.id,
+    },
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
 export async function deleteProduct(id: string) {
-  await requireAdmin()
+  const { user } = await requireAdmin()
+  const target = await prisma.product.findUnique({ where: { id } })
+
   await prisma.product.delete({ where: { id } })
+
+  await prisma.auditLog.create({
+    data: {
+      action: "DELETE_PRODUCT",
+      entityId: id,
+      details: `Suppression produit ${target?.name || id}`,
+      userId: user.id,
+    },
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
@@ -68,25 +121,41 @@ export async function getStockMovements(from?: string, to?: string) {
   })
 }
 
-export async function addStockMovement(data: { type: string, qty: number, price?: number, motif?: string, date: string, productId: string }) {
+export async function addStockMovement(data: { type: string; qty: number; price?: number; motif?: string; date: string; productId: string }) {
   const { user } = await requireAuth()
+  const validated = stockMovementSchema.parse(data)
   
   if (user.role === "DG") throw new Error("Le DG ne gère pas les mouvements de stock")
-  if (data.type === "OUT" && !data.motif) throw new Error("Le motif est obligatoire pour une sortie")
-  if (data.qty <= 0) throw new Error("La quantité doit être supérieure à 0")
+  if (validated.type === "OUT" && !validated.motif) throw new Error("Le motif est obligatoire pour une sortie")
   
   await prisma.$transaction(async (tx) => {
+    const product = await tx.product.findUnique({ where: { id: validated.productId } })
+    if (!product) throw new Error("Produit introuvable")
+
+    if (validated.type === "OUT" && product.stock < validated.qty) {
+      throw new Error(`Stock insuffisant pour ${product.name} (Stock actuel: ${product.stock}, demandé: ${validated.qty})`)
+    }
+
     await tx.stockMovement.create({
       data: {
-        ...data,
+        ...validated,
         userId: user.id
       }
     })
     
-    const qtyChange = data.type === "IN" ? data.qty : -data.qty
+    const qtyChange = validated.type === "IN" ? validated.qty : -validated.qty
     await tx.product.update({
-      where: { id: data.productId },
+      where: { id: validated.productId },
       data: { stock: { increment: qtyChange } }
+    })
+
+    await tx.auditLog.create({
+      data: {
+        action: "STOCK_MOVEMENT",
+        entityId: validated.productId,
+        details: `Mouvement stock ${validated.type}: ${validated.qty} x ${product.name} (Motif: ${validated.motif || "N/A"})`,
+        userId: user.id,
+      }
     })
   })
   revalidatePath("/dashboard", "layout")
@@ -99,7 +168,6 @@ export async function getCashMovements(from?: string, to?: string) {
   if (from) where.date = { gte: from }
   if (to) where.date = { ...where.date, lte: to }
   
-  // Reception sees only their own
   if (user.role === "RECEPTIONIST") {
     where.userId = user.id
   }
@@ -113,11 +181,13 @@ export async function getCashMovements(from?: string, to?: string) {
 
 export async function addCashMovement(data: { label: string; amount: number; type: string; date: string }) {
   const { user } = await requireAuth()
+  const validated = cashMovementSchema.parse(data)
+
   if (user.role === "DG") throw new Error("Le DG ne saisit pas de caisse")
   
   await prisma.cashMovement.create({ 
     data: {
-      ...data,
+      ...validated,
       userId: user.id
     }
   })
@@ -125,8 +195,20 @@ export async function addCashMovement(data: { label: string; amount: number; typ
 }
 
 export async function deleteCashMovement(id: string) {
-  await requireAdmin()
-  await prisma.cashMovement.delete({ where: { id } })
+  const { user } = await requireAdmin()
+  const target = await prisma.cashMovement.findUnique({ where: { id } })
+
+  await prisma.$transaction(async (tx) => {
+    await tx.cashMovement.delete({ where: { id } })
+    await tx.auditLog.create({
+      data: {
+        action: "DELETE_CASH_MOVEMENT",
+        entityId: id,
+        details: `Suppression mouvement caisse: ${target?.label} (${target?.amount} FCFA)`,
+        userId: user.id,
+      }
+    })
+  })
   revalidatePath("/dashboard", "layout")
 }
 
@@ -139,45 +221,91 @@ export async function getUsers() {
   })
 }
 
-/**
- * Invite un nouveau membre : aucun mot de passe n'est défini par l'admin/DG.
- * Le compte est créé en statut PENDING et un e-mail d'activation est envoyé
- * à l'utilisateur, qui choisit lui-même mot de passe ou connexion Google.
- */
 export async function inviteUser(data: { name: string; email: string; role: string }) {
   const { user } = await requireAdminOrDG()
-  if (data.role === "ADMIN" && user.role !== "ADMIN") {
+  const validated = inviteUserSchema.parse(data)
+
+  if (validated.role === "ADMIN" && user.role !== "ADMIN") {
     throw new Error("Seul un administrateur peut créer un autre administrateur")
   }
 
-  const existing = await prisma.user.findUnique({ where: { email: data.email } })
+  const existing = await prisma.user.findUnique({ where: { email: validated.email } })
   if (existing) throw new Error("Un compte existe déjà avec cet e-mail.")
 
   const created = await prisma.user.create({
-    data: { name: data.name, email: data.email, role: data.role, status: "PENDING" },
+    data: { name: validated.name, email: validated.email, role: validated.role, status: "PENDING" },
   })
+
+  await prisma.auditLog.create({
+    data: {
+      action: "INVITE_USER",
+      entityId: created.id,
+      details: `Invitation envoyée à ${created.email} (${created.role})`,
+      userId: user.id,
+    }
+  })
+
   await createAndSendActivation(created.id, created.name, created.email)
   revalidatePath("/dashboard", "layout")
 }
 
-/** Renvoie un nouveau lien d'activation (invalide l'ancien) pour un compte encore PENDING */
 export async function resendInvitation(id: string) {
-  await requireAdminOrDG()
+  const { user } = await requireAdminOrDG()
   const target = await prisma.user.findUnique({ where: { id } })
   if (!target) throw new Error("Compte introuvable")
   if (target.status !== "PENDING") throw new Error("Ce compte est déjà actif.")
 
   await createAndSendActivation(target.id, target.name, target.email)
+  
+  await prisma.auditLog.create({
+    data: {
+      action: "RESEND_INVITATION",
+      entityId: target.id,
+      details: `Renvoyé invitation à ${target.email}`,
+      userId: user.id,
+    }
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
 export async function deleteUser(id: string) {
-  await requireAdmin()
-  await prisma.user.delete({ where: { id } })
+  const { user } = await requireAdmin()
+
+  // GARDE-FOU 1: Interdire l'auto-suppression
+  if (user.id === id) {
+    throw new Error("Vous ne pouvez pas supprimer votre propre compte administrateur.")
+  }
+
+  const targetUser = await prisma.user.findUnique({ where: { id } })
+  if (!targetUser) throw new Error("Utilisateur introuvable.")
+
+  // GARDE-FOU 2: Vérifier qu'il reste au moins 1 autre admin actif
+  if (targetUser.role === "ADMIN") {
+    const activeAdmins = await prisma.user.count({
+      where: { role: "ADMIN", status: "ACTIVE", id: { not: id } }
+    })
+    if (activeAdmins === 0) {
+      throw new Error("Impossible de supprimer le dernier administrateur actif.")
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.delete({ where: { id } })
+    await tx.auditLog.create({
+      data: {
+        action: "DELETE_USER",
+        entityId: id,
+        details: `Suppression de l'utilisateur ${targetUser.email} (${targetUser.role})`,
+        userId: user.id,
+      }
+    })
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
-// ─── ACCESS REQUESTS (Demandes d'accès) ───────────────────────────
+// ─── ACCESS REQUESTS ──────────────────────────────────────────────
 export async function getAccessRequests() {
   await requireAdminOrDG()
   return prisma.accessRequest.findMany({
@@ -186,7 +314,6 @@ export async function getAccessRequests() {
   })
 }
 
-/** Approuve une demande : crée le compte PENDING et envoie le lien d'activation */
 export async function approveAccessRequest(id: string, role: string) {
   const { user } = await requireAdminOrDG()
   if (role === "ADMIN" && user.role !== "ADMIN") {
@@ -205,15 +332,36 @@ export async function approveAccessRequest(id: string, role: string) {
       data: { name: request.name, email: request.email, role, status: "PENDING" },
     })
     await tx.accessRequest.update({ where: { id }, data: { status: "APPROVED" } })
+    
+    await tx.auditLog.create({
+      data: {
+        action: "APPROVE_ACCESS_REQUEST",
+        entityId: id,
+        details: `Approbation demande d'accès pour ${request.email} (${role})`,
+        userId: user.id,
+      }
+    })
+
     return newUser
   })
+
   await createAndSendActivation(created.id, created.name, created.email)
   revalidatePath("/dashboard", "layout")
 }
 
 export async function rejectAccessRequest(id: string) {
-  await requireAdminOrDG()
+  const { user } = await requireAdminOrDG()
   await prisma.accessRequest.update({ where: { id }, data: { status: "REJECTED" } })
+  
+  await prisma.auditLog.create({
+    data: {
+      action: "REJECT_ACCESS_REQUEST",
+      entityId: id,
+      details: `Rejet demande d'accès ID ${id}`,
+      userId: user.id,
+    }
+  })
+
   revalidatePath("/dashboard", "layout")
 }
 
@@ -238,7 +386,7 @@ export async function getClosures() {
 
 export async function getLiveDailySummary() {
   const { user } = await requireAuth()
-  if (user.role === "DG") return null // Le DG n'a pas de "journée en cours" personnelle
+  if (user.role === "DG") return null
   const { computeLiveDailySnapshot } = await import("@/lib/closures")
   return computeLiveDailySnapshot(user.id, todayStr())
 }
@@ -254,16 +402,28 @@ export async function validateClosure(id: string, handedAmount: number, comments
   
   const discrepancy = handedAmount - closure.expectedAmount
   
-  await prisma.closure.update({
-    where: { id },
-    data: {
-      handedAmount,
-      discrepancy,
-      comments,
-      status: "VALIDATED",
-      validatedById: user.id
-    }
+  await prisma.$transaction(async (tx) => {
+    await tx.closure.update({
+      where: { id },
+      data: {
+        handedAmount,
+        discrepancy,
+        comments,
+        status: "VALIDATED",
+        validatedById: user.id
+      }
+    })
+
+    await tx.auditLog.create({
+      data: {
+        action: "VALIDATE_CLOSURE",
+        entityId: id,
+        details: `Validation bilan hebdo ${closure.date}: Remis ${handedAmount} FCFA (Écart: ${discrepancy} FCFA)`,
+        userId: user.id,
+      }
+    })
   })
+
   revalidatePath("/dashboard", "layout")
 }
 
@@ -280,7 +440,6 @@ export async function getResumeStats() {
     whereEntries.userId = user.id
   }
 
-  // 7 derniers jours (pour le graphique de tendance)
   const last7Dates: string[] = []
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
@@ -288,7 +447,6 @@ export async function getResumeStats() {
     last7Dates.push(d.toISOString().slice(0, 10))
   }
 
-  // Mois précédent (pour la comparaison)
   const prevMonthDate = new Date(`${thisMonth}-01T00:00:00Z`)
   prevMonthDate.setUTCMonth(prevMonthDate.getUTCMonth() - 1)
   const prevMonth = prevMonthDate.toISOString().slice(0, 7)
@@ -367,7 +525,6 @@ export async function getResumeStats() {
   const occupiedRoomNums = new Set(ongoingEntries.map((e) => e.roomNum))
   const occupied = Math.min(occupiedRoomNums.size, rooms)
 
-  // Activité en direct de chaque réceptionniste aujourd'hui (admin/dg uniquement)
   let receptionistsLiveToday: { id: string; name: string; entriesCount: number; expectedAmount: number }[] = []
   if (user.role !== "RECEPTIONIST" && receptionnistes.length > 0) {
     const { computeLiveDailySnapshot } = await import("@/lib/closures")

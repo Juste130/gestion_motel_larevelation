@@ -1,23 +1,13 @@
 "use server"
 
 import { prisma } from "@/lib/prisma"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
-
-async function getSessionAndUser() {
-  const session = await getServerSession(authOptions)
-  if (!session) throw new Error("Non autorisé")
-  return session
-}
-
 import { todayStr } from "@/lib/utils"
+import { getSessionUser } from "@/lib/session"
+import { addEntrySchema, closeEntrySchema, addProductToEntrySchema } from "@/lib/validations"
 
 export async function getEntries(date: string) {
-  // date in YYYY-MM-DD
   const today = todayStr()
-  
-  // Si on cherche une date dans le futur, on ne remonte pas les séjours "en cours" du passé.
   const isFuture = date > today
 
   const entries = await prisma.entry.findMany({
@@ -44,7 +34,6 @@ export async function getEntries(date: string) {
 }
 
 export async function addEntry(data: {
-// ... existing addEntry function logic is untouched ...
   date: string
   receiptNo?: string
   roomNum: string
@@ -57,21 +46,38 @@ export async function addEntry(data: {
   condomAmount: number
   products: { id: string; qty: number; price: number }[]
 }) {
-  const session = await getSessionAndUser()
-  const userId = (session.user as any)?.id
+  const validated = addEntrySchema.parse(data)
+  const { user } = await getSessionUser()
+  const userId = user.id
 
   const entry = await prisma.$transaction(async (tx) => {
-    const productIds = data.products.map(p => p.id)
+    // Vérification de la disponibilité de la chambre (non occupée)
+    const activeEntry = await tx.entry.findFirst({
+      where: {
+        roomNum: validated.roomNum,
+        departure: null
+      }
+    })
+    if (activeEntry) {
+      throw new Error(`La chambre ${validated.roomNum} est actuellement occupée. Veuillez d'abord clôturer le séjour en cours.`)
+    }
+
+    const productIds = validated.products.map(p => p.id)
     const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
     
     let productsAmount = 0
     const entryProductsData = []
 
-    for (const p of data.products) {
+    for (const p of validated.products) {
       const dbProduct = dbProducts.find(x => x.id === p.id)
       if (!dbProduct) throw new Error("Produit introuvable")
+
+      // VERIFICATION DU STOCK DISPONIBLE (POINT 2 DE L'AUDIT)
+      if (dbProduct.stock < p.qty) {
+        throw new Error(`Stock insuffisant pour "${dbProduct.name}" (Disponible: ${dbProduct.stock}, demandé: ${p.qty})`)
+      }
       
-      const price = dbProduct.price // Prix sécurisé depuis la BDD
+      const price = dbProduct.price
       productsAmount += price * p.qty
       
       entryProductsData.push({
@@ -90,28 +96,28 @@ export async function addEntry(data: {
           type: "OUT",
           qty: p.qty,
           price: price,
-          motif: `Séjour ch. ${data.roomNum}`,
-          date: data.date,
+          motif: `Séjour ch. ${validated.roomNum}`,
+          date: validated.date,
           productId: p.id,
           userId
         }
       })
     }
 
-    const total = data.roomAmount + data.condomAmount + productsAmount
+    const total = validated.roomAmount + validated.condomAmount + productsAmount
 
     const newEntry = await tx.entry.create({
       data: {
-        date: data.date,
-        receiptNo: data.receiptNo,
-        roomNum: data.roomNum,
-        roomType: data.roomType,
-        roomTypeLabel: data.roomTypeLabel,
-        arrival: data.arrival,
-        departure: data.departure,
-        duration: data.duration,
-        roomAmount: data.roomAmount,
-        condomAmount: data.condomAmount,
+        date: validated.date,
+        receiptNo: validated.receiptNo,
+        roomNum: validated.roomNum,
+        roomType: validated.roomType,
+        roomTypeLabel: validated.roomTypeLabel,
+        arrival: validated.arrival,
+        departure: validated.departure,
+        duration: validated.duration,
+        roomAmount: validated.roomAmount,
+        condomAmount: validated.condomAmount,
         drinksAmount: productsAmount,
         total,
         userId,
@@ -144,21 +150,27 @@ export async function closeEntry(entryId: string, data: {
   products: { id: string; qty: number; price: number }[];
   currentDate: string;
 }) {
-  const session = await getSessionAndUser()
-  const userId = (session.user as any)?.id
+  const validated = closeEntrySchema.parse(data)
+  const { user } = await getSessionUser()
+  const userId = user.id
 
   await prisma.$transaction(async (tx) => {
     const entry = await tx.entry.findUnique({ where: { id: entryId } })
     if (!entry) throw new Error("Séjour introuvable")
 
     let additionalAmount = 0
-    if (data.products && data.products.length > 0) {
-      const productIds = data.products.map(p => p.id)
+    if (validated.products && validated.products.length > 0) {
+      const productIds = validated.products.map(p => p.id)
       const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
 
-      for (const p of data.products) {
+      for (const p of validated.products) {
         const dbProduct = dbProducts.find(x => x.id === p.id)
         if (!dbProduct) throw new Error("Produit introuvable")
+
+        // VERIFICATION DU STOCK DISPONIBLE (POINT 2 DE L'AUDIT)
+        if (dbProduct.stock < p.qty) {
+          throw new Error(`Stock insuffisant pour "${dbProduct.name}" (Disponible: ${dbProduct.stock}, demandé: ${p.qty})`)
+        }
         
         const price = dbProduct.price
         additionalAmount += price * p.qty
@@ -194,7 +206,7 @@ export async function closeEntry(entryId: string, data: {
             qty: p.qty,
             price: price,
             motif: `Ajout conso clôture séjour ch. ${entry.roomNum}`,
-            date: data.currentDate,
+            date: validated.currentDate,
             productId: p.id,
             userId
           }
@@ -202,19 +214,19 @@ export async function closeEntry(entryId: string, data: {
       }
     }
 
-    const newRoomAmount = data.roomAmount
+    const newRoomAmount = validated.roomAmount
     const newDrinksAmount = entry.drinksAmount + additionalAmount
     const newTotal = newRoomAmount + entry.condomAmount + newDrinksAmount
 
     await tx.entry.update({
       where: { id: entryId },
       data: {
-        departure: data.departure,
-        duration: data.duration,
+        departure: validated.departure,
+        duration: validated.duration,
         roomAmount: newRoomAmount,
         drinksAmount: newDrinksAmount,
         total: newTotal,
-        date: data.currentDate // Mise à jour de la date pour la compta !
+        date: validated.currentDate
       }
     })
 
@@ -222,7 +234,7 @@ export async function closeEntry(entryId: string, data: {
       data: {
         action: 'UPDATE_DEPARTURE',
         entityId: entryId,
-        details: `Clôture: départ ${data.departure}, montant ch. ${newRoomAmount}`,
+        details: `Clôture: départ ${validated.departure}, montant ch. ${newRoomAmount}`,
         userId,
       }
     })
@@ -232,10 +244,9 @@ export async function closeEntry(entryId: string, data: {
 }
 
 export async function updateDeparture(entryId: string, departure: string, duration: string) {
-  const session = await getSessionAndUser()
-  const role = (session.user as any)?.role
+  const { user } = await getSessionUser()
+  const role = user.role
 
-  // ANTI-FRAUD RULE: Only DG/ADMIN can update departure directly
   if (role !== "DG" && role !== "ADMIN") {
     throw new Error("Seule la direction peut modifier l'heure de départ.")
   }
@@ -249,17 +260,15 @@ export async function updateDeparture(entryId: string, departure: string, durati
 }
 
 export async function deleteEntry(entryId: string) {
-  const session = await getSessionAndUser()
-  const role = (session.user as any)?.role
-  const userId = (session.user as any)?.id
+  const { user } = await getSessionUser()
+  const role = user.role
+  const userId = user.id
 
-  // ANTI-FRAUD RULE: Only DG/ADMIN can delete
   if (role !== "DG" && role !== "ADMIN") {
     throw new Error("Seule la direction peut supprimer un enregistrement.")
   }
 
   await prisma.$transaction(async (tx) => {
-    // Restore stock before delete
     const entry = await tx.entry.findUnique({
       where: { id: entryId },
       include: { products: true }
@@ -302,21 +311,27 @@ export async function deleteEntry(entryId: string) {
 }
 
 export async function addProductToEntry(entryId: string, date: string, products: { id: string; qty: number; price: number }[]) {
-  const session = await getSessionAndUser()
-  const userId = (session.user as any)?.id
+  const validated = addProductToEntrySchema.parse({ entryId, date, products })
+  const { user } = await getSessionUser()
+  const userId = user.id
 
   await prisma.$transaction(async (tx) => {
     const entry = await tx.entry.findUnique({ where: { id: entryId } })
     if (!entry) throw new Error("Séjour introuvable")
 
-    const productIds = products.map(p => p.id)
+    const productIds = validated.products.map(p => p.id)
     const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
 
     let additionalAmount = 0
 
-    for (const p of products) {
+    for (const p of validated.products) {
       const dbProduct = dbProducts.find(x => x.id === p.id)
       if (!dbProduct) throw new Error("Produit introuvable")
+
+      // VERIFICATION DU STOCK DISPONIBLE (POINT 2 DE L'AUDIT)
+      if (dbProduct.stock < p.qty) {
+        throw new Error(`Stock insuffisant pour "${dbProduct.name}" (Disponible: ${dbProduct.stock}, demandé: ${p.qty})`)
+      }
       
       const price = dbProduct.price
       additionalAmount += price * p.qty
@@ -352,7 +367,7 @@ export async function addProductToEntry(entryId: string, date: string, products:
           qty: p.qty,
           price: price,
           motif: `Ajout conso séjour ch. ${entry.roomNum}`,
-          date: date,
+          date: validated.date,
           productId: p.id,
           userId
         }
