@@ -280,11 +280,54 @@ export async function getResumeStats() {
     whereEntries.userId = user.id
   }
 
-  const [entriesThisMonth, allUsers, rooms, products] = await Promise.all([
+  // 7 derniers jours (pour le graphique de tendance)
+  const last7Dates: string[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setUTCDate(d.getUTCDate() - i)
+    last7Dates.push(d.toISOString().slice(0, 10))
+  }
+
+  // Mois précédent (pour la comparaison)
+  const prevMonthDate = new Date(`${thisMonth}-01T00:00:00Z`)
+  prevMonthDate.setUTCMonth(prevMonthDate.getUTCMonth() - 1)
+  const prevMonth = prevMonthDate.toISOString().slice(0, 7)
+  const wherePrevMonth: any = { date: { startsWith: prevMonth } }
+  if (user.role === "RECEPTIONIST") wherePrevMonth.userId = user.id
+
+  const [
+    entriesThisMonth,
+    allUsers,
+    rooms,
+    products,
+    last7DaysEntries,
+    prevMonthEntries,
+    ongoingEntries,
+    lowStockProducts,
+    pendingAccessRequestsCount,
+  ] = await Promise.all([
     prisma.entry.findMany({ where: whereEntries }),
     user.role !== "RECEPTIONIST" ? prisma.user.findMany({ select: { id: true, name: true, role: true } }) : [],
     prisma.room.count(),
     prisma.product.count(),
+    prisma.entry.findMany({
+      where: {
+        date: { gte: last7Dates[0], lte: last7Dates[6] },
+        ...(user.role === "RECEPTIONIST" ? { userId: user.id } : {}),
+      },
+      select: { date: true, total: true },
+    }),
+    prisma.entry.findMany({ where: wherePrevMonth, select: { total: true } }),
+    prisma.entry.findMany({
+      where: { OR: [{ departure: null }, { departure: "" }] },
+      select: { roomNum: true },
+    }),
+    prisma.product.findMany({
+      where: { stock: { lte: 3 } },
+      select: { id: true, name: true, category: true, stock: true },
+      orderBy: { stock: "asc" },
+    }),
+    user.role !== "RECEPTIONIST" ? prisma.accessRequest.count({ where: { status: "PENDING" } }) : 0,
   ])
 
   const receptionnistes = user.role !== "RECEPTIONIST" ? allUsers.filter((u) => u.role === "RECEPTIONIST") : []
@@ -308,13 +351,48 @@ export async function getResumeStats() {
   const recettes = cashMovements.filter(m => m.type === "recette").reduce((s, m) => s + m.amount, 0)
   const depenses = cashMovements.filter(m => m.type === "depense").reduce((s, m) => s + m.amount, 0)
 
+  const totalRevenueMonth = entriesThisMonth.reduce((s, e: any) => s + (e.total || 0), 0)
+  const previousMonthRevenue = prevMonthEntries.reduce((s, e: any) => s + (e.total || 0), 0)
+  const revenueChangePct = previousMonthRevenue > 0
+    ? ((totalRevenueMonth - previousMonthRevenue) / previousMonthRevenue) * 100
+    : null
+
+  const revenueByDay = last7Dates.map((date) => ({
+    date,
+    revenue: last7DaysEntries
+      .filter((e) => e.date === date)
+      .reduce((s, e) => s + (e.total || 0), 0),
+  }))
+
+  const occupiedRoomNums = new Set(ongoingEntries.map((e) => e.roomNum))
+  const occupied = Math.min(occupiedRoomNums.size, rooms)
+
+  // Activité en direct de chaque réceptionniste aujourd'hui (admin/dg uniquement)
+  let receptionistsLiveToday: { id: string; name: string; entriesCount: number; expectedAmount: number }[] = []
+  if (user.role !== "RECEPTIONIST" && receptionnistes.length > 0) {
+    const { computeLiveDailySnapshot } = await import("@/lib/closures")
+    receptionistsLiveToday = await Promise.all(
+      receptionnistes.map(async (r) => {
+        const snap = await computeLiveDailySnapshot(r.id, today)
+        return { id: r.id, name: r.name || "Réceptionniste", entriesCount: snap.entriesCount, expectedAmount: snap.expectedAmount }
+      })
+    )
+  }
+
   return {
-    totalRevenueMonth: entriesThisMonth.reduce((s, e: any) => s + (e.total || 0), 0),
+    totalRevenueMonth,
     totalEntriesMonth: entriesThisMonth.length,
     roomCount: rooms,
     productCount: products,
     revenueByUser, 
     recettes,
-    depenses
+    depenses,
+    previousMonthRevenue,
+    revenueChangePct,
+    revenueByDay,
+    occupancy: { total: rooms, occupied, free: Math.max(rooms - occupied, 0) },
+    lowStockAlerts: lowStockProducts,
+    receptionistsLiveToday,
+    pendingAccessRequestsCount,
   }
 }
