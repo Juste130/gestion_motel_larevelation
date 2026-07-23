@@ -173,7 +173,7 @@ export function UsersPageClient({ users: initUsers, accessRequests: initRequests
       )}
 
       <div className="card-base">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-50">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-zinc-50">
           <h2 className="font-bold text-zinc-800">{users.length} membre(s)</h2>
           <button
             onClick={() => setShowForm(!showForm)}
