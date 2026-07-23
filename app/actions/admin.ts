@@ -553,3 +553,45 @@ export async function getResumeStats() {
     pendingAccessRequestsCount,
   }
 }
+// ─── JOURNAL D'ACTIVITÉ (AuditLog) ────────────────────────────────
+const AUDIT_ACTION_LABELS: Record<string, string> = {
+  CREATE_ENTRY: "Création de séjour",
+  UPDATE_DEPARTURE: "Clôture de séjour",
+  UPDATE_ENTRY: "Modification de séjour",
+  DELETE_ENTRY: "Suppression de séjour",
+}
+
+export async function getAuditLogs(filters?: { action?: string; from?: string; to?: string }) {
+  await requireAdminOrDG()
+
+  const where: any = {}
+  if (filters?.action) where.action = filters.action
+  if (filters?.from || filters?.to) {
+    where.createdAt = {}
+    if (filters.from) where.createdAt.gte = new Date(`${filters.from}T00:00:00`)
+    if (filters.to) where.createdAt.lte = new Date(`${filters.to}T23:59:59`)
+  }
+
+  const logs = await prisma.auditLog.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: 300, // le journal n'est pas encore paginé — on affiche les 300 événements les plus récents
+  })
+
+  // AuditLog.userId n'a pas de relation Prisma déclarée : on joint manuellement.
+  const userIds = [...new Set(logs.map((l) => l.userId))]
+  const users = userIds.length
+    ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } })
+    : []
+  const userMap = new Map(users.map((u) => [u.id, u]))
+
+  return logs.map((l) => ({
+    id: l.id,
+    action: l.action,
+    actionLabel: AUDIT_ACTION_LABELS[l.action] ?? l.action,
+    entityId: l.entityId,
+    details: l.details,
+    createdAt: l.createdAt,
+    user: userMap.get(l.userId) ?? null,
+  }))
+}

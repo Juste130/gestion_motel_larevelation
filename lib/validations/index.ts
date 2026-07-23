@@ -69,3 +69,13 @@ export const productSchema = z.object({
   price: z.number().positive("Le prix doit être supérieur à 0"),
   stock: z.number().int().nonnegative("Le stock doit être supérieur ou égal à 0"),
 })
+
+export const updateNameSchema = z.object({
+  name: z.string().trim().min(2, "Le nom doit contenir au moins 2 caractères").max(100, "Le nom est trop long"),
+})
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Le mot de passe actuel est requis"),
+  newPassword: z.string().min(1, "Le nouveau mot de passe est requis"),
+  confirmPassword: z.string().min(1, "La confirmation est requise"),
+})

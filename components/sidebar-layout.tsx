@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard, Wallet, Package, Settings,
-  Users, BarChart2, LogOut, Menu, ChevronRight, ChevronLeft, BookOpen
+  Users, BarChart2, LogOut, Menu, ChevronRight, ChevronLeft, BookOpen, History
 } from "lucide-react"
 import { signOut } from "next-auth/react"
 
@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/params",  label: "Paramètres",         icon: Settings,         roles: ["ADMIN", "DG", "RECEPTIONIST"] },
   { href: "/dashboard/users",   label: "Équipe",             icon: Users,            roles: ["ADMIN", "DG"] },
   { href: "/dashboard/bilans",  label: "Bilans & Clôtures",  icon: BarChart2,        roles: ["ADMIN", "DG", "RECEPTIONIST"] },
+  { href: "/dashboard/logs",    label: "Journal d'activité", icon: History,          roles: ["ADMIN", "DG"] },
 ]
 
 function NavLink({ href, label, icon: Icon, active, collapsed, badge }: {
@@ -126,25 +127,32 @@ export function SidebarLayout({ user, lowStockCount = 0, children }: SidebarLayo
         {/* User footer */}
         <div className="border-t border-zinc-100 py-3">
           <div className={`flex items-center gap-3 py-2 rounded-md bg-zinc-50 transition-all ${collapsed ? "px-0 mx-2 justify-center" : "px-3 mx-3"}`}>
-            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-sm font-bold text-amber-700">
-                {(user.name || user.email)[0].toUpperCase()}
-              </span>
-            </div>
-            {!collapsed && (
-              <>
+            <Link
+              href="/dashboard/profile"
+              title="Mon profil"
+              className={`flex items-center gap-3 min-w-0 flex-1 rounded-sm hover:opacity-80 transition-opacity ${collapsed ? "justify-center" : ""}`}
+              onClick={() => isMobile && setMobileOpen(false)}
+            >
+              <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <span className="text-sm font-bold text-amber-700">
+                  {(user.name || user.email)[0].toUpperCase()}
+                </span>
+              </div>
+              {!collapsed && (
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-zinc-800 truncate">{user.name || "Utilisateur"}</p>
                   <p className="text-[11px] text-zinc-400 truncate">{roleLabel}</p>
                 </div>
-                <button
-                  onClick={() => signOut({ callbackUrl: "/login" })}
-                  title="Se déconnecter"
-                  className="p-1.5 rounded-sm text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                >
-                  <LogOut size={16} />
-                </button>
-              </>
+              )}
+            </Link>
+            {!collapsed && (
+              <button
+                onClick={() => signOut({ callbackUrl: "/login" })}
+                title="Se déconnecter"
+                className="p-1.5 rounded-sm text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
+              >
+                <LogOut size={16} />
+              </button>
             )}
           </div>
           {collapsed && (
