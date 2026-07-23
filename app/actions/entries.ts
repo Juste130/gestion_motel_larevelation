@@ -2,9 +2,9 @@
 
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { todayStr } from "@/lib/utils"
+import { todayStr, computeDuration } from "@/lib/utils"
 import { getSessionUser } from "@/lib/session"
-import { addEntrySchema, closeEntrySchema, addProductToEntrySchema } from "@/lib/validations"
+import { addEntrySchema, closeEntrySchema, addProductToEntrySchema, splitNuiteeSchema } from "@/lib/validations"
 
 export async function getEntries(date: string) {
   const today = todayStr()
@@ -39,6 +39,7 @@ export async function addEntry(data: {
   roomNum: string
   roomType: string
   roomTypeLabel: string
+  stayType: "HORAIRE" | "NUITEE"
   arrival?: string
   departure?: string
   duration?: string
@@ -113,6 +114,7 @@ export async function addEntry(data: {
         roomNum: validated.roomNum,
         roomType: validated.roomType,
         roomTypeLabel: validated.roomTypeLabel,
+        stayType: validated.stayType,
         arrival: validated.arrival,
         departure: validated.departure,
         duration: validated.duration,
@@ -146,6 +148,7 @@ export async function addEntry(data: {
 export async function closeEntry(entryId: string, data: {
   departure: string;
   duration?: string;
+  stayType: "HORAIRE" | "NUITEE";
   roomAmount: number;
   products: { id: string; qty: number; price: number }[];
   currentDate: string;
@@ -223,6 +226,7 @@ export async function closeEntry(entryId: string, data: {
       data: {
         departure: validated.departure,
         duration: validated.duration,
+        stayType: validated.stayType,
         roomAmount: newRoomAmount,
         drinksAmount: newDrinksAmount,
         total: newTotal,
@@ -387,6 +391,77 @@ export async function addProductToEntry(entryId: string, date: string, products:
         action: 'UPDATE_ENTRY',
         entityId: entryId,
         details: `Ajout de consommations au séjour ch. ${entry.roomNum}`,
+        userId,
+      }
+    })
+  })
+
+  revalidatePath('/dashboard', 'layout')
+}
+
+/**
+ * Scinde un séjour en NUITEE dont le départ réel dépasse le seuil des 12h10
+ * en deux séjours distincts :
+ *  1. Le séjour d'origine, clôturé à 12h00 (dernière échéance nuitée valide),
+ *     facturé nightlyAmount (N nuitées × tarif nuitée).
+ *  2. Un nouveau séjour HORAIRE, même chambre, couvrant de 12h00 au départ
+ *     réel, facturé hourlyAmount (heures dépassées × tarif horaire).
+ * Les deux montants restent ceux fournis par la réception (suggérés côté
+ * client, mais éditables — même logique que le reste du montant chambre).
+ */
+export async function splitNuiteeToHoraire(entryId: string, data: {
+  currentDate: string
+  actualDeparture: string
+  nightlyAmount: number
+  hourlyAmount: number
+}) {
+  const validated = splitNuiteeSchema.parse(data)
+  const { user } = await getSessionUser()
+  const userId = user.id
+
+  await prisma.$transaction(async (tx) => {
+    const entry = await tx.entry.findUnique({ where: { id: entryId } })
+    if (!entry) throw new Error("Séjour introuvable")
+    if (entry.departure) throw new Error("Ce séjour est déjà clôturé.")
+    if (entry.stayType !== "NUITEE") throw new Error("La scission n'est possible que pour un séjour en nuitée.")
+
+    const cutoffTotal = validated.nightlyAmount + entry.condomAmount + entry.drinksAmount
+
+    await tx.entry.update({
+      where: { id: entryId },
+      data: {
+        departure: "12:00",
+        duration: null,
+        roomAmount: validated.nightlyAmount,
+        total: cutoffTotal,
+        // La date reste celle de l'arrivée : la clôture "12h00" n'est pas le
+        // vrai jour de départ, c'est le nouveau séjour horaire qui l'est.
+      }
+    })
+
+    const hourlyEntry = await tx.entry.create({
+      data: {
+        date: validated.currentDate,
+        roomNum: entry.roomNum,
+        roomType: entry.roomType,
+        roomTypeLabel: entry.roomTypeLabel,
+        stayType: "HORAIRE",
+        arrival: "12:00",
+        departure: validated.actualDeparture,
+        duration: computeDuration("12:00", validated.actualDeparture),
+        roomAmount: validated.hourlyAmount,
+        condomAmount: 0,
+        drinksAmount: 0,
+        total: validated.hourlyAmount,
+        userId,
+      }
+    })
+
+    await tx.auditLog.create({
+      data: {
+        action: 'SPLIT_STAY',
+        entityId: entryId,
+        details: `Scission ch. ${entry.roomNum} : nuitée clôturée à 12h00 (${validated.nightlyAmount} FCFA), heures dépassées facturées à l'horaire sur le séjour ${hourlyEntry.id} (${validated.hourlyAmount} FCFA)`,
         userId,
       }
     })

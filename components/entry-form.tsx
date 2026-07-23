@@ -16,9 +16,10 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
 
   const [receiptNo, setReceiptNo] = useState("")
   const [roomNum, setRoomNum] = useState(firstAvailableRoom?.num || "")
+  const [stayType, setStayType] = useState<"HORAIRE" | "NUITEE">("HORAIRE")
   const [arrival, setArrival] = useState("")
   const [departure, setDeparture] = useState("")
-  const [roomAmount, setRoomAmount] = useState(firstAvailableRoom?.price?.toString() || "")
+  const [roomAmount, setRoomAmount] = useState(firstAvailableRoom?.priceHourly?.toString() || "")
   const [condomAmount, setCondomAmount] = useState("")
   const [selectedProducts, setSelectedProducts] = useState<any[]>([])
   const [productPick, setProductPick] = useState("")
@@ -135,6 +136,24 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
               <BedDouble size={20} className="text-primary" />
               Détails de la chambre
             </h3>
+
+            <div className="flex gap-2 p-1 bg-secondary/60 rounded-md w-fit">
+              <button
+                type="button"
+                onClick={() => { setStayType("HORAIRE"); if (room) setRoomAmount(room.priceHourly.toString()) }}
+                className={`px-4 h-9 rounded-sm text-sm font-semibold transition-colors ${stayType === "HORAIRE" ? "bg-white text-amber-700 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
+              >
+                Horaire
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStayType("NUITEE"); if (room) setRoomAmount(room.priceNightly.toString()) }}
+                className={`px-4 h-9 rounded-sm text-sm font-semibold transition-colors ${stayType === "NUITEE" ? "bg-white text-amber-700 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
+              >
+                Nuitée
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 bg-secondary/40 rounded-md border border-border/50">
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">N° de reçu</label>
@@ -148,7 +167,7 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
                     const newNum = e.target.value
                     setRoomNum(newNum)
                     const r = rooms.find((x: any) => x.num === newNum)
-                    if (r && r.price !== undefined) setRoomAmount(r.price.toString())
+                    if (r) setRoomAmount((stayType === "HORAIRE" ? r.priceHourly : r.priceNightly).toString())
                   }} 
                   className={selectClasses}
                 >
@@ -175,6 +194,8 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">Montant chambre (F CFA)</label>
                 <input type="number" inputMode="numeric" value={roomAmount} onChange={(e) => setRoomAmount(e.target.value)} placeholder="0" className="input-base font-mono font-medium text-amber-700" />
+                <span className="text-[10px] text-zinc-400">
+                  Tarif {stayType === "HORAIRE" ? "horaire" : "nuitée"} catalogue : {room ? formatMoney(stayType === "HORAIRE" ? room.priceHourly : room.priceNightly) : "—"} — modifiable
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">Préservatifs (F CFA)</label>

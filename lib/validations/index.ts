@@ -12,6 +12,7 @@ export const addEntrySchema = z.object({
   roomNum: z.string().min(1, "Le numéro de chambre est requis"),
   roomType: z.string().min(1, "Le type de chambre est requis"),
   roomTypeLabel: z.string().min(1, "Le libellé du type est requis"),
+  stayType: z.enum(["HORAIRE", "NUITEE"], { message: "Type de séjour invalide" }),
   arrival: z.string().optional(),
   departure: z.string().optional(),
   duration: z.string().optional(),
@@ -23,6 +24,7 @@ export const addEntrySchema = z.object({
 export const closeEntrySchema = z.object({
   departure: z.string().min(1, "L'heure de départ est requise"),
   duration: z.string().optional(),
+  stayType: z.enum(["HORAIRE", "NUITEE"], { message: "Type de séjour invalide" }),
   roomAmount: z.number().nonnegative("Le montant de la chambre doit être supérieur ou égal à 0"),
   products: z.array(entryProductSchema),
   currentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format de date invalide"),
@@ -32,6 +34,13 @@ export const addProductToEntrySchema = z.object({
   entryId: z.string().min(1, "L'ID du séjour est requis"),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format de date invalide"),
   products: z.array(entryProductSchema).min(1, "Au moins un produit doit être sélectionné"),
+})
+
+export const splitNuiteeSchema = z.object({
+  currentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format de date invalide"),
+  actualDeparture: z.string().min(1, "L'heure de départ réelle est requise"),
+  nightlyAmount: z.number().nonnegative("Le montant nuitée doit être supérieur ou égal à 0"),
+  hourlyAmount: z.number().nonnegative("Le montant horaire doit être supérieur ou égal à 0"),
 })
 
 export const stockMovementSchema = z.object({
@@ -60,7 +69,13 @@ export const roomSchema = z.object({
   num: z.string().min(1, "Le numéro de chambre est requis"),
   type: z.string().min(1, "Le type de chambre est requis"),
   label: z.string().min(1, "Le libellé est requis"),
-  price: z.number().nonnegative("Le prix doit être positif"),
+  priceHourly: z.number().nonnegative("Le tarif horaire doit être positif ou nul"),
+  priceNightly: z.number().nonnegative("Le tarif nuitée doit être positif ou nul"),
+})
+
+export const updateRoomPriceSchema = z.object({
+  priceHourly: z.number().nonnegative("Le tarif horaire doit être positif ou nul"),
+  priceNightly: z.number().nonnegative("Le tarif nuitée doit être positif ou nul"),
 })
 
 export const productSchema = z.object({

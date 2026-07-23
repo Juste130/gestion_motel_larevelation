@@ -46,3 +46,51 @@ export function computeDuration(arrival: string, departure: string) {
   if (m === 0) return `${h}h`;
   return `${h}h${String(m).padStart(2, "0")}`;
 }
+
+// ─── Règles Horaire / Nuitée ───────────────────────────────────────
+// Une nuitée se termine à 12h00, avec une marge de 10 min. Passé 12h10,
+// une nuitée supplémentaire est considérée comme entamée.
+export const NIGHT_CHECKOUT_MINUTES = 12 * 60 // 12h00
+export const NIGHT_CHECKOUT_GRACE_MINUTES = 10 // marge de 10 min (jusqu'à 12h10)
+
+function timeToMinutes(time: string) {
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + m
+}
+
+/**
+ * Nombre de nuitées facturées entre une date d'arrivée et une date/heure de
+ * départ, selon la règle du checkout à 12h00 (+10 min de marge). Minimum 1
+ * nuitée.
+ */
+export function computeNights(arrivalDate: string, departureDate: string, departureTime: string) {
+  const arr = new Date(`${arrivalDate}T00:00:00`)
+  const dep = new Date(`${departureDate}T00:00:00`)
+  const dayDiff = Math.round((dep.getTime() - arr.getTime()) / (1000 * 60 * 60 * 24))
+
+  const extraNight = timeToMinutes(departureTime) > NIGHT_CHECKOUT_MINUTES + NIGHT_CHECKOUT_GRACE_MINUTES ? 1 : 0
+
+  return Math.max(1, dayDiff + extraNight)
+}
+
+/** Nombre d'heures entamées après 12h00 (0 si le départ est avant/à midi) */
+export function computeOvershootHours(departureTime: string) {
+  const overshootMinutes = timeToMinutes(departureTime) - NIGHT_CHECKOUT_MINUTES
+  if (overshootMinutes <= 0) return 0
+  return Math.ceil(overshootMinutes / 60)
+}
+
+/**
+ * Nombre d'heures facturables entre une arrivée et un départ (date + heure),
+ * en tenant compte des séjours qui s'étalent sur plusieurs jours. Toute heure
+ * entamée est facturée en entier (pratique standard pour la facturation à
+ * l'heure).
+ */
+export function computeBillableHours(arrivalDate: string, arrivalTime: string, departureDate: string, departureTime: string) {
+  if (!arrivalTime || !departureTime) return 0
+  const arr = new Date(`${arrivalDate}T${arrivalTime}:00`)
+  const dep = new Date(`${departureDate}T${departureTime}:00`)
+  const diffMs = dep.getTime() - arr.getTime()
+  if (diffMs <= 0) return 0
+  return Math.ceil(diffMs / (1000 * 60 * 60))
+}

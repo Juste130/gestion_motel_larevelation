@@ -40,13 +40,14 @@ model ActivationToken {
 }
 
 model Room {
-  id        String   @id @default(cuid())
-  num       String   @unique
-  type      String   // V (Ventilée), C (Climée), A (Appart)
-  label     String
-  price     Float    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  num          String   @unique
+  type         String   // V (Ventilée), C (Climée), A (Appart)
+  label        String
+  priceHourly  Float    @default(0) // tarif à l'heure
+  priceNightly Float    @default(0) // tarif à la nuitée
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Product {
@@ -68,6 +69,7 @@ model Entry {
   roomNum      String
   roomType     String
   roomTypeLabel String
+  stayType     String   @default("HORAIRE") // HORAIRE | NUITEE
   arrival      String?
   departure    String?
   duration     String?
@@ -89,6 +91,7 @@ model Entry {
 
   products     EntryProduct[]
 }
+
 
 model EntryProduct {
   id        String @id @default(cuid())

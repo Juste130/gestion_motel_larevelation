@@ -7,6 +7,7 @@ import { createAndSendActivation } from "@/lib/invitations"
 import { getSessionUser } from "@/lib/session"
 import {
   roomSchema,
+  updateRoomPriceSchema,
   productSchema,
   stockMovementSchema,
   cashMovementSchema,
@@ -31,7 +32,7 @@ export async function requireAdminOrDG() {
 }
 
 // ─── CATALOG : Rooms ─────────────────────────────────────────────
-export async function addRoom(data: { num: string; type: string; label: string; price: number }) {
+export async function addRoom(data: { num: string; type: string; label: string; priceHourly: number; priceNightly: number }) {
   const { user } = await requireAdminOrDG()
   const validated = roomSchema.parse(data)
   
@@ -41,7 +42,26 @@ export async function addRoom(data: { num: string; type: string; label: string; 
     data: {
       action: "CREATE_ROOM",
       entityId: room.id,
-      details: `Création chambre ${room.num} (${room.label}) - ${room.price} FCFA`,
+      details: `Création chambre ${room.num} (${room.label}) - Horaire: ${room.priceHourly} FCFA, Nuitée: ${room.priceNightly} FCFA`,
+      userId: user.id,
+    },
+  })
+
+  revalidatePath("/dashboard", "layout")
+}
+
+/** Modifie les tarifs horaire/nuitée d'une chambre existante */
+export async function updateRoomPrice(id: string, data: { priceHourly: number; priceNightly: number }) {
+  const { user } = await requireAdminOrDG()
+  const validated = updateRoomPriceSchema.parse(data)
+
+  const room = await prisma.room.update({ where: { id }, data: validated })
+
+  await prisma.auditLog.create({
+    data: {
+      action: "UPDATE_ROOM",
+      entityId: room.id,
+      details: `Mise à jour tarifs chambre ${room.num} - Horaire: ${room.priceHourly} FCFA, Nuitée: ${room.priceNightly} FCFA`,
       userId: user.id,
     },
   })
@@ -559,6 +579,7 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   UPDATE_DEPARTURE: "Clôture de séjour",
   UPDATE_ENTRY: "Modification de séjour",
   DELETE_ENTRY: "Suppression de séjour",
+  SPLIT_STAY: "Scission nuitée → horaire",
 }
 
 export async function getAuditLogs(filters?: { action?: string; from?: string; to?: string }) {
