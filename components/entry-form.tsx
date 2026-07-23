@@ -96,6 +96,7 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
       roomNum,
       roomType: room?.type,
       roomTypeLabel,
+      stayType,
       arrival,
       departure,
       duration: computeDuration(arrival, departure),
@@ -196,6 +197,7 @@ export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave 
                 <input type="number" inputMode="numeric" value={roomAmount} onChange={(e) => setRoomAmount(e.target.value)} placeholder="0" className="input-base font-mono font-medium text-amber-700" />
                 <span className="text-[10px] text-zinc-400">
                   Tarif {stayType === "HORAIRE" ? "horaire" : "nuitée"} catalogue : {room ? formatMoney(stayType === "HORAIRE" ? room.priceHourly : room.priceNightly) : "—"} — modifiable
+                </span>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">Préservatifs (F CFA)</label>

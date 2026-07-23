@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Plus, Trash2 } from "lucide-react"
-import { addRoom, deleteRoom, addProduct, deleteProduct } from "@/app/actions/admin"
+import { Plus, Trash2, Pencil, Check, X } from "lucide-react"
+import { addRoom, deleteRoom, updateRoomPrice, addProduct, deleteProduct } from "@/app/actions/admin"
 import { formatMoney } from "@/lib/utils"
+import { toast } from "sonner"
 
-type Room = { id: string; num: string; type: string; label: string; price: number }
+type Room = { id: string; num: string; type: string; label: string; priceHourly: number; priceNightly: number }
 type Product = { id: string; name: string; category: string; price: number; stock: number }
 
 export function ParamsPageClient({ rooms: initRooms, products: initProducts, role }: {
@@ -13,50 +14,106 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
 }) {
   const [rooms, setRooms] = useState(initRooms)
   const [products, setProducts] = useState(initProducts)
-  const [roomForm, setRoomForm] = useState({ num: "", type: "C", label: "Confort", price: 0 })
+  const [roomForm, setRoomForm] = useState({ num: "", type: "C", label: "Confort", priceHourly: "", priceNightly: "" })
   const [productForm, setProductForm] = useState({ name: "", category: "DRINK", price: "", stock: "0" })
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
+  const [editPrices, setEditPrices] = useState({ priceHourly: "", priceNightly: "" })
   const [isPending, startTransition] = useTransition()
 
   const canModify = role === "ADMIN" || role === "DG"
   const canDelete = role === "ADMIN"
 
   const handleAddRoom = () => {
-    if (!roomForm.num) return
+    if (!roomForm.num || !roomForm.priceHourly || !roomForm.priceNightly) {
+      toast.error("Veuillez renseigner le numéro et les deux tarifs.")
+      return
+    }
     startTransition(async () => {
-      await addRoom(roomForm)
-      setRooms(prev => [...prev, { ...roomForm, id: Date.now().toString() }])
-      setRoomForm({ num: "", type: "C", label: "Confort", price: 0 })
+      try {
+        const payload = {
+          num: roomForm.num,
+          type: roomForm.type,
+          label: roomForm.label,
+          priceHourly: parseFloat(roomForm.priceHourly),
+          priceNightly: parseFloat(roomForm.priceNightly),
+        }
+        await addRoom(payload)
+        setRooms(prev => [...prev, { ...payload, id: Date.now().toString() }])
+        setRoomForm({ num: "", type: "C", label: "Confort", priceHourly: "", priceNightly: "" })
+        toast.success("Chambre ajoutée.")
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Erreur lors de l'ajout.")
+      }
     })
   }
 
   const handleDeleteRoom = (id: string) => {
     startTransition(async () => {
-      await deleteRoom(id)
-      setRooms(prev => prev.filter(r => r.id !== id))
+      try {
+        await deleteRoom(id)
+        setRooms(prev => prev.filter(r => r.id !== id))
+        toast.success("Chambre supprimée.")
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Erreur lors de la suppression.")
+      }
+    })
+  }
+
+  const startEditPrices = (r: Room) => {
+    setEditingRoomId(r.id)
+    setEditPrices({ priceHourly: r.priceHourly.toString(), priceNightly: r.priceNightly.toString() })
+  }
+
+  const handleSavePrices = (id: string) => {
+    const priceHourly = parseFloat(editPrices.priceHourly)
+    const priceNightly = parseFloat(editPrices.priceNightly)
+    if (isNaN(priceHourly) || isNaN(priceNightly)) {
+      toast.error("Tarifs invalides.")
+      return
+    }
+    startTransition(async () => {
+      try {
+        await updateRoomPrice(id, { priceHourly, priceNightly })
+        setRooms(prev => prev.map(r => r.id === id ? { ...r, priceHourly, priceNightly } : r))
+        setEditingRoomId(null)
+        toast.success("Tarifs mis à jour.")
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Erreur lors de la mise à jour.")
+      }
     })
   }
 
   const handleAddProduct = () => {
     if (!productForm.name || !productForm.price) return
     startTransition(async () => {
-      await addProduct({
-        name: productForm.name,
-        category: productForm.category,
-        price: parseFloat(productForm.price),
-        stock: parseInt(productForm.stock) || 0
-      })
-      setProducts(prev => [...prev, {
-        ...productForm, id: Date.now().toString(),
-        price: parseFloat(productForm.price), stock: parseInt(productForm.stock) || 0
-      }])
-      setProductForm({ name: "", category: "DRINK", price: "", stock: "0" })
+      try {
+        await addProduct({
+          name: productForm.name,
+          category: productForm.category,
+          price: parseFloat(productForm.price),
+          stock: parseInt(productForm.stock) || 0
+        })
+        setProducts(prev => [...prev, {
+          ...productForm, id: Date.now().toString(),
+          price: parseFloat(productForm.price), stock: parseInt(productForm.stock) || 0
+        }])
+        setProductForm({ name: "", category: "DRINK", price: "", stock: "0" })
+        toast.success("Produit ajouté.")
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Erreur lors de l'ajout.")
+      }
     })
   }
 
   const handleDeleteProduct = (id: string) => {
     startTransition(async () => {
-      await deleteProduct(id)
-      setProducts(prev => prev.filter(p => p.id !== id))
+      try {
+        await deleteProduct(id)
+        setProducts(prev => prev.filter(p => p.id !== id))
+        toast.success("Produit supprimé.")
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Erreur lors de la suppression.")
+      }
     })
   }
 
@@ -94,6 +151,18 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
                 <option value="A">Appartement</option>
               </select>
             </div>
+            <div className="flex flex-col gap-1 w-28">
+              <label className="text-xs font-semibold text-zinc-500">Tarif horaire</label>
+              <input type="number" min={0} value={roomForm.priceHourly} onChange={e => setRoomForm({ ...roomForm, priceHourly: e.target.value })}
+                placeholder="0"
+                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+            </div>
+            <div className="flex flex-col gap-1 w-28">
+              <label className="text-xs font-semibold text-zinc-500">Tarif nuitée</label>
+              <input type="number" min={0} value={roomForm.priceNightly} onChange={e => setRoomForm({ ...roomForm, priceNightly: e.target.value })}
+                placeholder="0"
+                className="h-9 px-3 text-sm rounded-xl border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+            </div>
             <button onClick={handleAddRoom} disabled={isPending}
               className="btn-secondary h-9 px-4">
               <Plus size={14} /> Ajouter
@@ -101,13 +170,15 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
           </div>
         )}
         <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[480px]">
+        <table className="w-full text-sm min-w-[620px]">
           <thead>
             <tr className="bg-zinc-50 text-xs font-bold text-zinc-400 uppercase tracking-wider">
               <th className="text-left px-6 py-3">Numéro</th>
               <th className="text-left px-6 py-3">Type</th>
               <th className="text-left px-6 py-3">Label</th>
-              {canDelete && <th className="px-6 py-3" />}
+              <th className="text-right px-6 py-3">Tarif horaire</th>
+              <th className="text-right px-6 py-3">Tarif nuitée</th>
+              {canModify && <th className="px-6 py-3" />}
             </tr>
           </thead>
           <tbody>
@@ -116,17 +187,50 @@ export function ParamsPageClient({ rooms: initRooms, products: initProducts, rol
                 <td className="px-6 py-3.5 font-bold font-mono text-zinc-800">{r.num}</td>
                 <td className="px-6 py-3.5"><span className="text-xs font-bold px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-600">{r.type}</span></td>
                 <td className="px-6 py-3.5 text-zinc-600">{r.label}</td>
-                {canDelete && (
-                  <td className="px-6 py-3.5 text-right">
-                    <button onClick={() => handleDeleteRoom(r.id)} className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-sm transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
+
+                {editingRoomId === r.id ? (
+                  <>
+                    <td className="px-6 py-3.5">
+                      <input type="number" min={0} value={editPrices.priceHourly}
+                        onChange={e => setEditPrices({ ...editPrices, priceHourly: e.target.value })}
+                        className="h-8 w-24 px-2 text-sm text-right rounded-md border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 ml-auto block" />
+                    </td>
+                    <td className="px-6 py-3.5">
+                      <input type="number" min={0} value={editPrices.priceNightly}
+                        onChange={e => setEditPrices({ ...editPrices, priceNightly: e.target.value })}
+                        className="h-8 w-24 px-2 text-sm text-right rounded-md border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-amber-400 ml-auto block" />
+                    </td>
+                    <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                      <button onClick={() => handleSavePrices(r.id)} disabled={isPending} className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-sm transition-colors">
+                        <Check size={14} />
+                      </button>
+                      <button onClick={() => setEditingRoomId(null)} className="p-1.5 text-zinc-400 hover:bg-zinc-100 rounded-sm transition-colors">
+                        <X size={14} />
+                      </button>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="px-6 py-3.5 text-right font-mono text-zinc-500">{formatMoney(r.priceHourly)}</td>
+                    <td className="px-6 py-3.5 text-right font-mono text-zinc-500">{formatMoney(r.priceNightly)}</td>
+                    {canModify && (
+                      <td className="px-6 py-3.5 text-right whitespace-nowrap">
+                        <button onClick={() => startEditPrices(r)} className="p-1.5 text-zinc-400 hover:text-amber-600 hover:bg-amber-50 rounded-sm transition-colors">
+                          <Pencil size={14} />
+                        </button>
+                        {canDelete && (
+                          <button onClick={() => handleDeleteRoom(r.id)} className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-sm transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </>
                 )}
               </tr>
             ))}
             {rooms.length === 0 && (
-              <tr><td colSpan={4} className="px-6 py-8 text-center text-zinc-400 text-sm">Aucune chambre enregistrée</td></tr>
+              <tr><td colSpan={6} className="px-6 py-8 text-center text-zinc-400 text-sm">Aucune chambre enregistrée</td></tr>
             )}
           </tbody>
         </table>

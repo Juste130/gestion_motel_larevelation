@@ -3,14 +3,14 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Plus, Trash2, Calendar, ShoppingCart, DoorOpen, Loader2, BedDouble, AlertTriangle } from "lucide-react"
-import { addEntry, deleteEntry, addProductToEntry, closeEntry } from "@/app/actions/entries"
+import { addEntry, deleteEntry, addProductToEntry, closeEntry, splitNuiteeToHoraire } from "@/app/actions/entries"
 import { formatMoney, todayStr } from "@/lib/utils"
 import { EntryForm } from "@/components/entry-form"
 import { CloseEntryModal } from "@/components/close-entry-modal"
 import { AddProductModal } from "@/components/add-product-modal"
 import { toast } from "sonner"
 
-type Room = { id: string; num: string; type: string; label: string }
+type Room = { id: string; num: string; type: string; label: string; priceHourly: number; priceNightly: number }
 type Product = { id: string; name: string; category: string; price: number; stock: number }
 
 export function RegistreClient({ entries, rooms, products, currentDate, role }: {
@@ -40,6 +40,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           roomNum: data.roomNum,
           roomType: data.roomType,
           roomTypeLabel: data.roomTypeLabel,
+          stayType: data.stayType,
           arrival: data.arrival || undefined,
           duration: data.duration || undefined,
           roomAmount: data.roomAmount,
@@ -75,12 +76,27 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
       try {
         await closeEntry(closingEntry.id, {
           departure: data.departure,
+          stayType: data.stayType,
           roomAmount: data.roomAmount,
           products: data.products,
           currentDate
         })
         setClosingEntry(null)
         toast.success("Séjour clôturé avec succès !")
+        router.refresh()
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
+      }
+    })
+  }
+
+  const handleSplitEntry = (data: any) => {
+    if (!closingEntry) return
+    startTransition(async () => {
+      try {
+        await splitNuiteeToHoraire(closingEntry.id, data)
+        setClosingEntry(null)
+        toast.success("Séjour scindé : nuitée clôturée à 12h00, horaire créé pour le dépassement.")
         router.refresh()
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
@@ -213,6 +229,11 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
                       <span className="text-sm font-bold text-amber-700 font-mono leading-tight">{entry.roomNum}</span>
                     </div>
                     <div>
+                      <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider mb-1 ${
+                        entry.stayType === "NUITEE" ? "bg-blue-50 text-blue-600" : "bg-zinc-100 text-zinc-500"
+                      }`}>
+                        {entry.stayType === "NUITEE" ? "Nuitée" : "Horaire"}
+                      </span>
                       {entry.receiptNo && <p className="text-xs font-mono text-zinc-400 mb-0.5">Reçu: {entry.receiptNo}</p>}
                       <p className="text-xs text-zinc-400 font-medium">Créé par {entry.user?.name || "—"}</p>
                     </div>
@@ -304,9 +325,11 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
         <CloseEntryModal 
           entry={closingEntry}
           products={products}
+          room={rooms.find(r => r.num === closingEntry.roomNum)}
           currentDate={currentDate}
           onCancel={() => setClosingEntry(null)}
           onSave={handleCloseEntry}
+          onSplit={handleSplitEntry}
         />
       )}
     </div>
