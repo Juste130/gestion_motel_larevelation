@@ -94,3 +94,28 @@ export function computeBillableHours(arrivalDate: string, arrivalTime: string, d
   if (diffMs <= 0) return 0
   return Math.ceil(diffMs / (1000 * 60 * 60))
 }
+
+/**
+ * Montant théorique "couru" par un séjour encore en cours, calculé au tarif
+ * catalogue de la chambre jusqu'à l'instant présent (pas jusqu'au départ,
+ * puisqu'il n'a pas encore eu lieu). Sert uniquement à afficher un statut
+ * "payé / partiellement payé / reste à payer" — n'est jamais enregistré ni
+ * compté comme revenu tant que le séjour n'est pas soldé.
+ */
+export function computeAccruedAmount(
+  stayType: "HORAIRE" | "NUITEE",
+  arrivalDate: string,
+  arrivalTime: string,
+  room: { priceHourly: number; priceNightly: number }
+) {
+  const now = getBeninTime()
+  const nowDate = todayStr()
+  const nowTime = currentTimeStr()
+
+  if (stayType === "HORAIRE") {
+    const hours = computeBillableHours(arrivalDate, arrivalTime, nowDate, nowTime)
+    return Math.max(hours, 1) * room.priceHourly
+  }
+  const nights = computeNights(arrivalDate, nowDate, nowTime)
+  return nights * room.priceNightly
+}

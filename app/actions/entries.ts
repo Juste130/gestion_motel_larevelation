@@ -24,6 +24,7 @@ export async function getEntries(date: string) {
       products: {
         include: { product: true }
       },
+      payments: true,
       user: {
         select: { name: true, email: true }
       }
@@ -234,12 +235,57 @@ export async function closeEntry(entryId: string, data: {
       }
     })
 
+    // Solde le séjour : crée un paiement pour le reliquat (total final moins
+    // ce qui avait déjà été réglé en cours de séjour), daté d'aujourd'hui.
+    // C'est ce paiement — pas Entry.total — qui alimente le bilan du jour.
+    const alreadyPaid = await tx.payment.aggregate({
+      where: { entryId },
+      _sum: { amount: true },
+    })
+    const remainder = newTotal - (alreadyPaid._sum.amount || 0)
+    if (remainder !== 0) {
+      await tx.payment.create({
+        data: { entryId, amount: remainder, date: todayStr(), userId },
+      })
+    }
+
     await tx.auditLog.create({
       data: {
         action: 'UPDATE_DEPARTURE',
         entityId: entryId,
         details: `Clôture: départ ${validated.departure}, montant ch. ${newRoomAmount}`,
         userId,
+      }
+    })
+  })
+
+  revalidatePath('/dashboard', 'layout')
+}
+
+/**
+ * Enregistre un paiement partiel pour un séjour encore en cours (le client
+ * règle une consommation ou une avance avant son départ). Le montant est
+ * daté d'aujourd'hui — il compte dans le bilan du jour où il est
+ * effectivement pris, jamais réparti sur les autres jours du séjour.
+ */
+export async function recordPartialPayment(entryId: string, amount: number) {
+  const { user } = await getSessionUser()
+  if (!amount || amount <= 0) throw new Error("Montant invalide.")
+
+  const entry = await prisma.entry.findUnique({ where: { id: entryId } })
+  if (!entry) throw new Error("Séjour introuvable")
+  if (entry.departure) throw new Error("Ce séjour est déjà clôturé — le solde a déjà été réglé automatiquement.")
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.create({
+      data: { entryId, amount, date: todayStr(), userId: user.id },
+    })
+    await tx.auditLog.create({
+      data: {
+        action: 'RECORD_PAYMENT',
+        entityId: entryId,
+        details: `Paiement partiel de ${amount} FCFA enregistré pour le séjour ch. ${entry.roomNum}`,
+        userId: user.id,
       }
     })
   })
@@ -439,6 +485,18 @@ export async function splitNuiteeToHoraire(entryId: string, data: {
       }
     })
 
+    // Solde le séjour nuitée d'origine (reliquat non déjà payé), daté d'aujourd'hui
+    const alreadyPaidOriginal = await tx.payment.aggregate({
+      where: { entryId },
+      _sum: { amount: true },
+    })
+    const remainderOriginal = cutoffTotal - (alreadyPaidOriginal._sum.amount || 0)
+    if (remainderOriginal !== 0) {
+      await tx.payment.create({
+        data: { entryId, amount: remainderOriginal, date: todayStr(), userId },
+      })
+    }
+
     const hourlyEntry = await tx.entry.create({
       data: {
         date: validated.currentDate,
@@ -456,6 +514,13 @@ export async function splitNuiteeToHoraire(entryId: string, data: {
         userId,
       }
     })
+
+    // Le nouveau séjour horaire est créé déjà clôturé : réglé intégralement
+    if (validated.hourlyAmount !== 0) {
+      await tx.payment.create({
+        data: { entryId: hourlyEntry.id, amount: validated.hourlyAmount, date: todayStr(), userId },
+      })
+    }
 
     await tx.auditLog.create({
       data: {

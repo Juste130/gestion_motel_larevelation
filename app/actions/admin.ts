@@ -199,9 +199,12 @@ export async function getCashMovements(from?: string, to?: string) {
   })
 }
 
-export async function addCashMovement(data: { label: string; amount: number; type: string; date: string }) {
+export async function addCashMovement(data: { label: string; amount: number; type: string }) {
   const { user } = await requireAuth()
-  const validated = cashMovementSchema.parse(data)
+  // La date est TOUJOURS celle du jour, fixée par le serveur — jamais fournie
+  // par le client. C'est ce qui garantit que les bilans des jours passés ne
+  // peuvent plus jamais changer.
+  const validated = cashMovementSchema.parse({ ...data, date: todayStr() })
 
   if (user.role === "DG") throw new Error("Le DG ne saisit pas de caisse")
   
@@ -385,60 +388,82 @@ export async function rejectAccessRequest(id: string) {
   revalidatePath("/dashboard", "layout")
 }
 
-// ─── CLOSURES (Bilans) ───────────────────────────────────────────
-export async function getClosures() {
-  const { user } = await requireAuth()
-  const where: any = {}
-  
-  if (user.role === "RECEPTIONIST") {
-    where.userId = user.id
-  }
-  
-  return prisma.closure.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      user: { select: { name: true } },
-      validatedBy: { select: { name: true } }
-    }
-  })
+// ─── BILANS (journalier / hebdomadaire, globaux) ─────────────────
+export async function getDailyBilan(date: string) {
+  await requireAuth()
+  const { computeDailyBilan } = await import("@/lib/closures")
+  return computeDailyBilan(date)
 }
 
+export async function getWeeklyBilan(anyDateInWeek: string) {
+  await requireAuth()
+  const { computeWeeklyBilan } = await import("@/lib/closures")
+  return computeWeeklyBilan(new Date(`${anyDateInWeek}T00:00:00Z`))
+}
+
+/** Résumé "en direct" du jour, réutilisé par le dashboard */
 export async function getLiveDailySummary() {
-  const { user } = await requireAuth()
-  if (user.role === "DG") return null
-  const { computeLiveDailySnapshot } = await import("@/lib/closures")
-  return computeLiveDailySnapshot(user.id, todayStr())
+  await requireAuth()
+  const { computeDailyBilan } = await import("@/lib/closures")
+  const bilan = await computeDailyBilan(todayStr())
+  return {
+    date: bilan.date,
+    entriesCount: bilan.entriesCount,
+    recettes: bilan.recettesCaisse,
+    depenses: bilan.depensesCaisse,
+    expectedAmount: bilan.montantAttendu,
+  }
 }
 
-export async function validateClosure(id: string, handedAmount: number, comments?: string) {
+/**
+ * Validation d'un bilan (journalier OU hebdomadaire) — DG/Admin uniquement.
+ * Une fois VALIDATED, un bilan est définitif : cette fonction refuse toute
+ * revalidation d'un bilan déjà validé.
+ */
+export async function validateBilan(date: string, type: "DAILY" | "WEEKLY", handedAmount: number, comments?: string) {
   const { user } = await requireAdminOrDG()
-  
-  const closure = await prisma.closure.findUnique({ where: { id } })
-  if (!closure) throw new Error("Bilan introuvable")
-  if (closure.type !== "WEEKLY") {
-    throw new Error("Seul le bilan hebdomadaire fait l'objet d'une remise à valider.")
+
+  const { computeDailyBilan, computeWeeklyBilan } = await import("@/lib/closures")
+  const bilan = type === "DAILY"
+    ? await computeDailyBilan(date)
+    : await computeWeeklyBilan(new Date(`${date}T00:00:00Z`))
+
+  if (bilan.closure?.status === "VALIDATED") {
+    throw new Error("Ce bilan a déjà été validé et ne peut plus être modifié.")
   }
-  
-  const discrepancy = handedAmount - closure.expectedAmount
-  
+
+  const expectedAmount = "montantAttendu" in bilan ? bilan.montantAttendu : 0
+  const discrepancy = handedAmount - expectedAmount
+  const closureDate = type === "WEEKLY" && "weekId" in bilan ? bilan.weekId : date
+
   await prisma.$transaction(async (tx) => {
-    await tx.closure.update({
-      where: { id },
-      data: {
+    await tx.closure.upsert({
+      where: { date_type: { date: closureDate, type } },
+      create: {
+        date: closureDate,
+        type,
+        expectedAmount,
         handedAmount,
         discrepancy,
         comments,
         status: "VALIDATED",
-        validatedById: user.id
-      }
+        validatedById: user.id,
+      },
+      update: {
+        expectedAmount,
+        handedAmount,
+        discrepancy,
+        comments,
+        status: "VALIDATED",
+        validatedById: user.id,
+      },
     })
 
     await tx.auditLog.create({
       data: {
         action: "VALIDATE_CLOSURE",
-        entityId: id,
-        details: `Validation bilan hebdo ${closure.date}: Remis ${handedAmount} FCFA (Écart: ${discrepancy} FCFA)`,
+        entityId: closureDate,
+        details: `Validation bilan ${type === "DAILY" ? "journalier" : "hebdomadaire"} ${closureDate}: Remis ${handedAmount} FCFA (Écart: ${discrepancy} FCFA)`,
         userId: user.id,
       }
     })
@@ -547,13 +572,19 @@ export async function getResumeStats() {
 
   let receptionistsLiveToday: { id: string; name: string; entriesCount: number; expectedAmount: number }[] = []
   if (user.role !== "RECEPTIONIST" && receptionnistes.length > 0) {
-    const { computeLiveDailySnapshot } = await import("@/lib/closures")
-    receptionistsLiveToday = await Promise.all(
-      receptionnistes.map(async (r) => {
-        const snap = await computeLiveDailySnapshot(r.id, today)
-        return { id: r.id, name: r.name || "Réceptionniste", entriesCount: snap.entriesCount, expectedAmount: snap.expectedAmount }
-      })
-    )
+    const todaysEntries = await prisma.entry.findMany({
+      where: { date: today },
+      select: { userId: true, total: true },
+    })
+    receptionistsLiveToday = receptionnistes.map((r) => {
+      const own = todaysEntries.filter((e) => e.userId === r.id)
+      return {
+        id: r.id,
+        name: r.name || "Réceptionniste",
+        entriesCount: own.length,
+        expectedAmount: own.reduce((s, e) => s + (e.total || 0), 0),
+      }
+    })
   }
 
   return {
