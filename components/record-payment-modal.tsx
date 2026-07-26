@@ -1,13 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { X, Check, Wallet } from "lucide-react"
+import { X, Check, Wallet, Loader2 } from "lucide-react"
 import { formatMoney } from "@/lib/utils"
 
-export function RecordPaymentModal({ entry, accruedAmount, alreadyPaid, onCancel, onSave }: {
+export function RecordPaymentModal({ entry, accruedAmount, alreadyPaid, isPending, onCancel, onSave }: {
   entry: any
   accruedAmount: number
   alreadyPaid: number
+  isPending?: boolean
   onCancel: () => void
   onSave: (amount: number) => void
 }) {
@@ -16,12 +17,12 @@ export function RecordPaymentModal({ entry, accruedAmount, alreadyPaid, onCancel
 
   function submit() {
     const val = parseFloat(amount)
-    if (!val || val <= 0) return
+    if (!val || val <= 0 || isPending) return
     onSave(val)
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-4" onClick={onCancel}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-4" onClick={() => !isPending && onCancel()}>
       <div onClick={(e) => e.stopPropagation()} className="bg-card w-full max-w-sm rounded-md shadow-2xl">
         <div className="flex justify-between items-center px-6 py-4 border-b border-border">
           <div className="flex items-center gap-3">
@@ -30,7 +31,7 @@ export function RecordPaymentModal({ entry, accruedAmount, alreadyPaid, onCancel
             </div>
             <h2 className="font-serif text-xl font-bold text-foreground m-0">Enregistrer un paiement</h2>
           </div>
-          <button onClick={onCancel} className="text-zinc-400 hover:bg-zinc-100 p-2 rounded-sm transition-colors">
+          <button onClick={onCancel} disabled={isPending} className="text-zinc-400 hover:bg-zinc-100 p-2 rounded-sm transition-colors disabled:opacity-50">
             <X size={18} />
           </button>
         </div>
@@ -61,6 +62,7 @@ export function RecordPaymentModal({ entry, accruedAmount, alreadyPaid, onCancel
               type="number" min={1} value={amount}
               onChange={(e) => setAmount(e.target.value)}
               className="input-base font-mono"
+              disabled={isPending}
               autoFocus
             />
             <span className="text-[11px] text-zinc-400">
@@ -70,9 +72,17 @@ export function RecordPaymentModal({ entry, accruedAmount, alreadyPaid, onCancel
         </div>
 
         <div className="border-t border-border p-6 flex gap-3">
-          <button onClick={onCancel} className="btn-outline flex-1">Annuler</button>
-          <button onClick={submit} className="btn-primary flex-[2]">
-            <Check size={16} className="mr-2" /> Enregistrer
+          <button onClick={onCancel} disabled={isPending} className="btn-outline flex-1">Annuler</button>
+          <button onClick={submit} disabled={isPending} className="btn-primary flex-[2]">
+            {isPending ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={16} className="animate-spin" /> Enregistrement...
+              </span>
+            ) : (
+              <>
+                <Check size={16} className="mr-2" /> Enregistrer
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -231,7 +231,6 @@ export async function closeEntry(entryId: string, data: {
         roomAmount: newRoomAmount,
         drinksAmount: newDrinksAmount,
         total: newTotal,
-        date: validated.currentDate
       }
     })
 
@@ -446,17 +445,19 @@ export async function addProductToEntry(entryId: string, date: string, products:
 }
 
 /**
- * Scinde un séjour en NUITEE dont le départ réel dépasse le seuil des 12h10
- * en deux séjours distincts :
- *  1. Le séjour d'origine, clôturé à 12h00 (dernière échéance nuitée valide),
- *     facturé nightlyAmount (N nuitées × tarif nuitée).
- *  2. Un nouveau séjour HORAIRE, même chambre, couvrant de 12h00 au départ
+ * Scinde un séjour en NUITEE dont le départ réel dépasse le cutoff de
+ * nuitée en deux séjours distincts :
+ *  1. Le séjour d'origine, clôturé au cutoff (dernière échéance nuitée
+ *     valide — 13h00 le lendemain, ou 24h après l'arrivée si celle-ci a eu
+ *     lieu avant 13h00), facturé nightlyAmount (N nuitées × tarif nuitée).
+ *  2. Un nouveau séjour HORAIRE, même chambre, couvrant du cutoff au départ
  *     réel, facturé hourlyAmount (heures dépassées × tarif horaire).
  * Les deux montants restent ceux fournis par la réception (suggérés côté
  * client, mais éditables — même logique que le reste du montant chambre).
  */
 export async function splitNuiteeToHoraire(entryId: string, data: {
   currentDate: string
+  cutoffTime: string
   actualDeparture: string
   nightlyAmount: number
   hourlyAmount: number
@@ -476,12 +477,12 @@ export async function splitNuiteeToHoraire(entryId: string, data: {
     await tx.entry.update({
       where: { id: entryId },
       data: {
-        departure: "12:00",
+        departure: validated.cutoffTime,
         duration: null,
         roomAmount: validated.nightlyAmount,
         total: cutoffTotal,
-        // La date reste celle de l'arrivée : la clôture "12h00" n'est pas le
-        // vrai jour de départ, c'est le nouveau séjour horaire qui l'est.
+        // La date reste celle de l'arrivée : la clôture au cutoff n'est pas
+        // le vrai jour de départ, c'est le nouveau séjour horaire qui l'est.
       }
     })
 
@@ -504,9 +505,9 @@ export async function splitNuiteeToHoraire(entryId: string, data: {
         roomType: entry.roomType,
         roomTypeLabel: entry.roomTypeLabel,
         stayType: "HORAIRE",
-        arrival: "12:00",
+        arrival: validated.cutoffTime,
         departure: validated.actualDeparture,
-        duration: computeDuration("12:00", validated.actualDeparture),
+        duration: computeDuration(validated.cutoffTime, validated.actualDeparture),
         roomAmount: validated.hourlyAmount,
         condomAmount: 0,
         drinksAmount: 0,
@@ -526,7 +527,7 @@ export async function splitNuiteeToHoraire(entryId: string, data: {
       data: {
         action: 'SPLIT_STAY',
         entityId: entryId,
-        details: `Scission ch. ${entry.roomNum} : nuitée clôturée à 12h00 (${validated.nightlyAmount} FCFA), heures dépassées facturées à l'horaire sur le séjour ${hourlyEntry.id} (${validated.hourlyAmount} FCFA)`,
+        details: `Scission ch. ${entry.roomNum} : nuitée clôturée à ${validated.cutoffTime} (${validated.nightlyAmount} FCFA), heures dépassées facturées à l'horaire sur le séjour ${hourlyEntry.id} (${validated.hourlyAmount} FCFA)`,
         userId,
       }
     })

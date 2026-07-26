@@ -38,6 +38,7 @@ export const addProductToEntrySchema = z.object({
 
 export const splitNuiteeSchema = z.object({
   currentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format de date invalide"),
+  cutoffTime: z.string().min(1, "L'heure d'échéance est requise"),
   actualDeparture: z.string().min(1, "L'heure de départ réelle est requise"),
   nightlyAmount: z.number().nonnegative("Le montant nuitée doit être supérieur ou égal à 0"),
   hourlyAmount: z.number().nonnegative("Le montant horaire doit être supérieur ou égal à 0"),

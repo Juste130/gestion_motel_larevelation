@@ -132,17 +132,78 @@ export async function computeWeeklyBilan(referenceDate: Date): Promise<WeeklyBil
     cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
 
-  const days = await Promise.all(dayDates.map((d) => computeDailyBilan(d)))
+  // Chargement en vrac pour toute la semaine au lieu de N+1 requêtes par jour
+  const [allPayments, allCashMovements, allEntries, allDailyClosures, weeklyClosure] = await Promise.all([
+    prisma.payment.findMany({ where: { date: { in: dayDates } }, include: { entry: true } }),
+    prisma.cashMovement.findMany({ where: { date: { in: dayDates } } }),
+    prisma.entry.findMany({
+      where: { date: { in: dayDates } },
+      include: { user: { select: { id: true, name: true } }, products: { include: { product: true } } },
+    }),
+    prisma.closure.findMany({
+      where: { date: { in: dayDates }, type: "DAILY" },
+      include: { validatedBy: { select: { name: true } } },
+    }),
+    prisma.closure.findUnique({
+      where: { date_type: { date: weekId, type: "WEEKLY" } },
+      include: { validatedBy: { select: { name: true } } },
+    }),
+  ])
+
+  const days: DailyBilan[] = dayDates.map((date) => {
+    const payments = allPayments.filter((p) => p.date === date)
+    const cashMovements = allCashMovements.filter((m) => m.date === date)
+    const entries = allEntries.filter((e) => e.date === date)
+    const closure = allDailyClosures.find((c) => c.date === date) || null
+
+    const montantSejours = payments.reduce((s, p) => s + p.amount, 0)
+    const recettesCaisse = cashMovements.filter((m) => m.type === "recette").reduce((s, m) => s + m.amount, 0)
+    const depensesCaisse = cashMovements.filter((m) => m.type === "depense").reduce((s, m) => s + m.amount, 0)
+
+    const receptionistsMap = new Map<string, { id: string; name: string | null }>()
+    for (const e of entries) {
+      if (e.user) receptionistsMap.set(e.user.id, { id: e.user.id, name: e.user.name })
+    }
+
+    let drinks = 0
+    let condoms = 0
+    for (const e of entries) {
+      for (const ep of e.products) {
+        if (ep.product.category === "CONDOM") condoms += ep.qty * ep.price
+        else drinks += ep.qty * ep.price
+      }
+    }
+
+    return {
+      date,
+      entriesCount: entries.length,
+      stayTypeBreakdown: {
+        horaire: entries.filter((e) => e.stayType === "HORAIRE").length,
+        nuitee: entries.filter((e) => e.stayType === "NUITEE").length,
+      },
+      receptionists: Array.from(receptionistsMap.values()),
+      montantSejours,
+      recettesCaisse,
+      depensesCaisse,
+      montantAttendu: montantSejours + recettesCaisse - depensesCaisse,
+      produitsVendus: { drinks, condoms },
+      closure: closure
+        ? {
+            id: closure.id,
+            status: closure.status,
+            handedAmount: closure.handedAmount,
+            discrepancy: closure.discrepancy,
+            comments: closure.comments,
+            validatedByName: closure.validatedBy?.name || null,
+          }
+        : null,
+    }
+  })
 
   const receptionistsMap = new Map<string, { id: string; name: string | null }>()
   for (const day of days) {
     for (const r of day.receptionists) receptionistsMap.set(r.id, r)
   }
-
-  const closure = await prisma.closure.findUnique({
-    where: { date_type: { date: weekId, type: "WEEKLY" } },
-    include: { validatedBy: { select: { name: true } } },
-  })
 
   const montantSejours = days.reduce((s, d) => s + d.montantSejours, 0)
   const recettesCaisse = days.reduce((s, d) => s + d.recettesCaisse, 0)
@@ -158,14 +219,14 @@ export async function computeWeeklyBilan(referenceDate: Date): Promise<WeeklyBil
     recettesCaisse,
     depensesCaisse,
     montantAttendu: montantSejours + recettesCaisse - depensesCaisse,
-    closure: closure
+    closure: weeklyClosure
       ? {
-          id: closure.id,
-          status: closure.status,
-          handedAmount: closure.handedAmount,
-          discrepancy: closure.discrepancy,
-          comments: closure.comments,
-          validatedByName: closure.validatedBy?.name || null,
+          id: weeklyClosure.id,
+          status: weeklyClosure.status,
+          handedAmount: weeklyClosure.handedAmount,
+          discrepancy: weeklyClosure.discrepancy,
+          comments: weeklyClosure.comments,
+          validatedByName: weeklyClosure.validatedBy?.name || null,
         }
       : null,
   }

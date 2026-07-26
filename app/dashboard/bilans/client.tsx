@@ -41,7 +41,7 @@ type WeeklyBilan = {
 function ClosureBadge({ closure, isToday }: { closure: Closure; isToday: boolean }) {
   if (isToday) {
     return <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold bg-blue-50 text-blue-600">
-      <Clock size={11} /> En cours — se fige à minuit
+      <Clock size={11} /> En cours — se fige à 07h00 le lendemain
     </span>
   }
   if (closure?.status === "VALIDATED") {

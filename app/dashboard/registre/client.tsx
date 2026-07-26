@@ -98,7 +98,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
       try {
         await splitNuiteeToHoraire(closingEntry.id, data)
         setClosingEntry(null)
-        toast.success("Séjour scindé : nuitée clôturée à 12h00, horaire créé pour le dépassement.")
+        toast.success("Séjour scindé : nuitée clôturée au cutoff, horaire créé pour le dépassement.")
         router.refresh()
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
@@ -366,6 +366,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
         <AddProductModal 
           entry={addingProductTo}
           products={products}
+          isPending={isPending}
           onCancel={() => setAddingProductTo(null)}
           onSave={handleSaveAdditionalProducts}
         />
@@ -377,6 +378,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           products={products}
           room={rooms.find(r => r.num === closingEntry.roomNum)}
           currentDate={currentDate}
+          isPending={isPending}
           onCancel={() => setClosingEntry(null)}
           onSave={handleCloseEntry}
           onSplit={handleSplitEntry}
@@ -394,6 +396,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
             entry={payingEntry}
             accruedAmount={accrued}
             alreadyPaid={paidSoFar}
+            isPending={isPending}
             onCancel={() => setPayingEntry(null)}
             onSave={handleRecordPayment}
           />

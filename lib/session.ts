@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { prisma } from "@/lib/prisma"
 
 export interface AuthenticatedUser {
   id: string
@@ -24,13 +25,23 @@ export async function getSessionUser(): Promise<{ session: any; user: Authentica
   if (!session || !session.user || !session.user.id) {
     throw new Error("Non autorisé")
   }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { status: true, role: true, name: true, email: true }
+  })
+
+  if (!dbUser || dbUser.status !== "ACTIVE") {
+    throw new Error("Compte inactif ou non autorisé.")
+  }
+
   return {
     session,
     user: {
       id: session.user.id,
-      email: session.user.email || "",
-      name: session.user.name || "",
-      role: session.user.role || "RECEPTIONIST",
+      email: dbUser.email || session.user.email || "",
+      name: dbUser.name || session.user.name || "",
+      role: dbUser.role || "RECEPTIONIST",
     },
   }
 }

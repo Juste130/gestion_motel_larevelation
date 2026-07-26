@@ -486,8 +486,9 @@ export async function getResumeStats() {
   }
 
   const last7Dates: string[] = []
+  const todayDateObj = new Date(`${today}T00:00:00Z`)
   for (let i = 6; i >= 0; i--) {
-    const d = new Date()
+    const d = new Date(todayDateObj)
     d.setUTCDate(d.getUTCDate() - i)
     last7Dates.push(d.toISOString().slice(0, 10))
   }

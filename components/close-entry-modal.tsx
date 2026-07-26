@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { X, Check, Plus, Trash2, DoorOpen, Split } from "lucide-react"
-import { formatMoney, getBeninTime, computeOvershootHours } from "@/lib/utils"
+import { formatMoney, getBeninTime, computeOvershootHours, computeLastNuiteeCutoff, formatCutoffTime } from "@/lib/utils"
 import { toast } from "sonner"
 
-export function CloseEntryModal({ entry, products, room, currentDate, onCancel, onSave, onSplit }: any) {
+import { Loader2 } from "lucide-react"
+
+export function CloseEntryModal({ entry, products, room, currentDate, isPending, onCancel, onSave, onSplit }: any) {
   const [departure, setDeparture] = useState("")
   const [stayType, setStayType] = useState<"HORAIRE" | "NUITEE">(entry.stayType || "HORAIRE")
   const [roomAmount, setRoomAmount] = useState(entry.roomAmount.toString())
@@ -28,13 +30,24 @@ export function CloseEntryModal({ entry, products, room, currentDate, onCancel, 
     return () => window.removeEventListener("keydown", handler)
   }, [onCancel])
 
-  // Heures de dépassement après 12h00, calculées à partir de l'heure de départ saisie
-  const overshootHours = useMemo(() => computeOvershootHours(departure), [departure])
+  // Cutoff de nuitée (dynamique : 13h00 le lendemain, ou 24h après l'arrivée
+  // si celle-ci a eu lieu avant 13h00) et heures de dépassement au-delà,
+  // calculés à partir de l'heure de départ saisie
+  const cutoffDate = useMemo(
+    () => computeLastNuiteeCutoff(entry.date, entry.arrival || "00:00", currentDate, departure || "00:00"),
+    [entry.date, entry.arrival, currentDate, departure]
+  )
+  const cutoffTimeStr = useMemo(() => formatCutoffTime(cutoffDate), [cutoffDate])
+  const overshootHours = useMemo(
+    () => computeOvershootHours(entry.date, entry.arrival || "00:00", currentDate, departure || "00:00"),
+    [entry.date, entry.arrival, currentDate, departure]
+  )
 
   // Le bouton de scission n'a de sens que pour un séjour NUITEE, avec un
-  // dépassement réel (>0h), et seulement si ce dépassement reste raisonnable
-  // (≤4h) — au-delà, une nuitée pleine supplémentaire est presque toujours
-  // plus avantageuse pour le client, la scission perd son intérêt.
+  // dépassement réel après le cutoff (tolérance zéro : >0h), et seulement si
+  // ce dépassement reste raisonnable (≤4h) — au-delà, une nuitée pleine
+  // supplémentaire est presque toujours plus avantageuse pour le client, la
+  // scission perd son intérêt.
   const canSplit = entry.stayType === "NUITEE" && overshootHours > 0 && overshootHours <= 4
 
   useEffect(() => {
@@ -112,6 +125,7 @@ export function CloseEntryModal({ entry, products, room, currentDate, onCancel, 
 
     onSplit({
       currentDate,
+      cutoffTime: cutoffTimeStr,
       actualDeparture: departure,
       nightlyAmount: parseFloat(nightlyAmount) || 0,
       hourlyAmount: parseFloat(hourlyAmount) || 0,
@@ -175,10 +189,10 @@ export function CloseEntryModal({ entry, products, room, currentDate, onCancel, 
               <Split size={18} className="text-blue-500 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="text-sm font-bold text-blue-800">
-                  Dépassement de {overshootHours}h après 12h00
+                  Dépassement de {overshootHours}h après {cutoffTimeStr}
                 </p>
                 <p className="text-xs text-blue-700 mt-1">
-                  Vous pouvez clôturer la nuitée à 12h00 et facturer séparément les {overshootHours}h supplémentaires à l'horaire.
+                  Vous pouvez clôturer la nuitée à {cutoffTimeStr} et facturer séparément les {overshootHours}h supplémentaires à l'horaire.
                 </p>
                 <button
                   onClick={() => setSplitMode(true)}
@@ -195,7 +209,7 @@ export function CloseEntryModal({ entry, products, room, currentDate, onCancel, 
               <p className="text-xs font-bold text-blue-700 uppercase tracking-wider">Scission du séjour</p>
               <div className="flex gap-3">
                 <div className="flex-1 flex flex-col gap-1.5">
-                  <label className="label-base">Montant nuitée (clôturée à 12h00)</label>
+                  <label className="label-base">Montant nuitée (clôturée à {cutoffTimeStr})</label>
                   <input type="number" inputMode="numeric" value={nightlyAmount} onChange={(e) => setNightlyAmount(e.target.value)} className="input-base font-mono" />
                 </div>
                 <div className="flex-1 flex flex-col gap-1.5">
@@ -204,12 +218,20 @@ export function CloseEntryModal({ entry, products, room, currentDate, onCancel, 
                 </div>
               </div>
               <p className="text-[11px] text-blue-600">
-                Deux séjours distincts seront créés : la nuitée d'origine (clôturée à 12h00) et un nouveau séjour horaire (12h00 → {departure || "—"}).
+                Deux séjours distincts seront créés : la nuitée d'origine (clôturée à {cutoffTimeStr}) et un nouveau séjour horaire ({cutoffTimeStr} → {departure || "—"}).
               </p>
               <div className="flex gap-2 pt-1">
-                <button onClick={() => setSplitMode(false)} className="btn-outline h-9 px-3 text-xs flex-1">Annuler la scission</button>
-                <button onClick={submitSplit} className="btn-primary h-9 px-3 text-xs flex-[2]">
-                  <Check size={14} /> Confirmer la scission
+                <button onClick={() => setSplitMode(false)} disabled={isPending} className="btn-outline h-9 px-3 text-xs flex-1">Annuler la scission</button>
+                <button onClick={submitSplit} disabled={isPending} className="btn-primary h-9 px-3 text-xs flex-[2]">
+                  {isPending ? (
+                    <span className="flex items-center gap-1">
+                      <Loader2 size={12} className="animate-spin" /> Scission...
+                    </span>
+                  ) : (
+                    <>
+                      <Check size={14} /> Confirmer la scission
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -286,9 +308,17 @@ export function CloseEntryModal({ entry, products, room, currentDate, onCancel, 
               <span className="font-mono font-bold text-2xl text-emerald-600">{formatMoney(newTotal)}</span>
             </div>
             <div className="flex gap-3">
-              <button onClick={onCancel} className="btn-outline flex-1">Annuler</button>
-              <button onClick={submit} className="btn-primary flex-[2]">
-                <Check size={18} className="mr-2" /> Valider la clôture
+              <button onClick={onCancel} disabled={isPending} className="btn-outline flex-1">Annuler</button>
+              <button onClick={submit} disabled={isPending} className="btn-primary flex-[2]">
+                {isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 size={18} className="animate-spin" /> Clôture en cours...
+                  </span>
+                ) : (
+                  <>
+                    <Check size={18} className="mr-2" /> Valider la clôture
+                  </>
+                )}
               </button>
             </div>
           </div>
