@@ -2,15 +2,16 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Trash2, Calendar, ShoppingCart, DoorOpen, Loader2, BedDouble, AlertTriangle } from "lucide-react"
-import { addEntry, deleteEntry, addProductToEntry, closeEntry } from "@/app/actions/entries"
-import { formatMoney, todayStr } from "@/lib/utils"
+import { Plus, Trash2, Calendar, ShoppingCart, DoorOpen, Loader2, BedDouble, AlertTriangle, Wallet } from "lucide-react"
+import { addEntry, deleteEntry, addProductToEntry, closeEntry, splitNuiteeToHoraire, recordPartialPayment } from "@/app/actions/entries"
+import { formatMoney, todayStr, computeAccruedAmount } from "@/lib/utils"
 import { EntryForm } from "@/components/entry-form"
 import { CloseEntryModal } from "@/components/close-entry-modal"
 import { AddProductModal } from "@/components/add-product-modal"
+import { RecordPaymentModal } from "@/components/record-payment-modal"
 import { toast } from "sonner"
 
-type Room = { id: string; num: string; type: string; label: string }
+type Room = { id: string; num: string; type: string; label: string; priceHourly: number; priceNightly: number }
 type Product = { id: string; name: string; category: string; price: number; stock: number }
 
 export function RegistreClient({ entries, rooms, products, currentDate, role }: {
@@ -20,7 +21,8 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
   const [showForm, setShowForm] = useState(false)
   const [closingEntry, setClosingEntry] = useState<any | null>(null)
   const [addingProductTo, setAddingProductTo] = useState<any | null>(null)
-  
+  const [payingEntry, setPayingEntry] = useState<any | null>(null)
+
   const [isPending, startTransition] = useTransition()
 
   const isToday = currentDate === todayStr()
@@ -40,6 +42,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           roomNum: data.roomNum,
           roomType: data.roomType,
           roomTypeLabel: data.roomTypeLabel,
+          stayType: data.stayType,
           arrival: data.arrival || undefined,
           duration: data.duration || undefined,
           roomAmount: data.roomAmount,
@@ -75,12 +78,41 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
       try {
         await closeEntry(closingEntry.id, {
           departure: data.departure,
+          stayType: data.stayType,
           roomAmount: data.roomAmount,
           products: data.products,
           currentDate
         })
         setClosingEntry(null)
-        toast.success("Séjour clôturé avec succès !")
+        toast.success("Séjour clôturé — solde réglé automatiquement.")
+        router.refresh()
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
+      }
+    })
+  }
+
+  const handleSplitEntry = (data: any) => {
+    if (!closingEntry) return
+    startTransition(async () => {
+      try {
+        await splitNuiteeToHoraire(closingEntry.id, data)
+        setClosingEntry(null)
+        toast.success("Séjour scindé : nuitée clôturée au cutoff, horaire créé pour le dépassement.")
+        router.refresh()
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
+      }
+    })
+  }
+
+  const handleRecordPayment = (amount: number) => {
+    if (!payingEntry) return
+    startTransition(async () => {
+      try {
+        await recordPartialPayment(payingEntry.id, amount)
+        setPayingEntry(null)
+        toast.success("Paiement enregistré.")
         router.refresh()
       } catch (err: unknown) {
         toast.error(err instanceof Error ? err.message : "Une erreur est survenue.")
@@ -110,7 +142,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           <h1 className="font-serif text-3xl font-bold text-zinc-900">Registre & Séjours</h1>
           <p className="text-zinc-500 mt-1 text-sm">Suivi des entrées et séjours du jour</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <input
               type="date"
@@ -144,13 +176,13 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card-base card-body flex flex-col justify-center">
+        <div className="card-base card-body flex flex-col justify-center min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Total recettes</p>
-          <p className="text-2xl font-bold font-mono text-zinc-800 mt-1">{formatMoney(totalRecettes)}</p>
+          <p className="text-lg sm:text-2xl font-bold font-mono text-zinc-800 mt-1 truncate">{formatMoney(totalRecettes)}</p>
         </div>
-        <div className="card-base card-body flex flex-col justify-center">
+        <div className="card-base card-body flex flex-col justify-center min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Séjours</p>
-          <p className="text-2xl font-bold font-mono text-zinc-800 mt-1">{entries.length}</p>
+          <p className="text-lg sm:text-2xl font-bold font-mono text-zinc-800 mt-1 truncate">{entries.length}</p>
         </div>
       </div>
 
@@ -159,6 +191,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
           rooms={rooms}
           drinks={products}
           date={currentDate}
+          entries={entries}
           onCancel={() => setShowForm(false)}
           onSave={handleSaveEntry}
         />
@@ -166,7 +199,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
 
       {/* Entries List */}
       <div className="card-base overflow-x-auto">
-        <table className="w-full text-sm min-w-[800px]">
+        <table className="w-full text-sm min-w-[860px]">
           <thead>
             <tr className="bg-zinc-50 text-xs font-bold text-zinc-400 uppercase tracking-wider border-b border-zinc-100">
               <th className="text-left px-5 py-3">Chambre</th>
@@ -195,13 +228,35 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
               </tr>
             ) : entries.map(entry => {
               const isPast = entry.date < currentDate;
-              // Calcul précis des jours écoulés (différence calendaire pure)
               const createdDateOnly = new Date(entry.createdAt).toISOString().split('T')[0];
               const diffTime = new Date(currentDate).getTime() - new Date(createdDateOnly).getTime();
               const daysElapsed = isPast ? Math.round(diffTime / (1000 * 3600 * 24)) : 0;
-              
+
               const createdAtDate = new Date(entry.createdAt);
               const originalDateStr = createdAtDate.toLocaleDateString("fr-FR");
+
+              const condomProductsTotal = entry.products
+                .filter((p: any) => p.product.category === "CONDOM")
+                .reduce((s: number, p: any) => s + p.qty * p.price, 0)
+              const drinksProductsTotal = entry.products
+                .filter((p: any) => p.product.category !== "CONDOM")
+                .reduce((s: number, p: any) => s + p.qty * p.price, 0)
+              const produitsTotal = condomProductsTotal + drinksProductsTotal
+
+              // Statut de règlement pour un séjour encore en cours
+              let paymentBadge: { label: string; tone: string } | null = null
+              let accrued = 0
+              let paidSoFar = 0
+              if (!entry.departure) {
+                const room = rooms.find(r => r.num === entry.roomNum)
+                if (room && entry.arrival) {
+                  accrued = computeAccruedAmount(entry.stayType, entry.date, entry.arrival, room) + condomProductsTotal + drinksProductsTotal
+                  paidSoFar = (entry.payments || []).reduce((s: number, p: any) => s + p.amount, 0)
+                  if (paidSoFar <= 0) paymentBadge = { label: "Reste à payer", tone: "bg-rose-50 text-rose-600" }
+                  else if (paidSoFar >= accrued) paymentBadge = { label: "Payé à ce jour", tone: "bg-emerald-50 text-emerald-700" }
+                  else paymentBadge = { label: "Partiellement payé", tone: "bg-amber-50 text-amber-700" }
+                }
+              }
 
               return (
               <tr key={entry.id} className={`hover:bg-zinc-50/50 transition-colors ${isPast && !entry.departure ? 'bg-amber-50/30' : ''}`}>
@@ -212,6 +267,11 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
                       <span className="text-sm font-bold text-amber-700 font-mono leading-tight">{entry.roomNum}</span>
                     </div>
                     <div>
+                      <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider mb-1 ${
+                        entry.stayType === "NUITEE" ? "bg-blue-50 text-blue-600" : "bg-zinc-100 text-zinc-500"
+                      }`}>
+                        {entry.stayType === "NUITEE" ? "Nuitée" : "Horaire"}
+                      </span>
                       {entry.receiptNo && <p className="text-xs font-mono text-zinc-400 mb-0.5">Reçu: {entry.receiptNo}</p>}
                       <p className="text-xs text-zinc-400 font-medium">Créé par {entry.user?.name || "—"}</p>
                     </div>
@@ -240,6 +300,12 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
                     ) : (
                       <div className="text-xs text-emerald-600 font-mono font-semibold">En cours</div>
                     )}
+
+                    {paymentBadge && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full w-fit uppercase tracking-wider ${paymentBadge.tone}`}>
+                        {paymentBadge.label}
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-5 py-4">
@@ -256,17 +322,23 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
                     ) : <span className="text-xs text-zinc-400 italic">Aucune conso</span>}
                     
                     {!entry.departure && canAdd && (
-                      <button onClick={() => setAddingProductTo(entry)} 
-                        className="btn-secondary h-7 px-2 text-[10px] uppercase mt-1">
-                        <ShoppingCart size={12} /> Ajouter conso
-                      </button>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        <button onClick={() => setAddingProductTo(entry)} 
+                          className="btn-secondary h-7 px-2 text-[10px] uppercase">
+                          <ShoppingCart size={12} /> Ajouter conso
+                        </button>
+                        <button onClick={() => setPayingEntry(entry)}
+                          className="h-7 px-2 text-[10px] uppercase rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50 inline-flex items-center gap-1 font-semibold transition-colors">
+                          <Wallet size={12} /> Paiement
+                        </button>
+                      </div>
                     )}
                   </div>
                 </td>
                 <td className="px-5 py-4 text-right">
                   <p className="font-bold font-mono text-lg text-emerald-600">{formatMoney(entry.total)}</p>
                   <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-wider">
-                    (Ch. {formatMoney(entry.roomAmount)} + Prod. {formatMoney(entry.drinksAmount)})
+                    (Ch. {formatMoney(entry.roomAmount)} + Prod. {formatMoney(produitsTotal)})
                   </p>
                 </td>
                 <td className="px-5 py-4 text-right whitespace-nowrap">
@@ -294,6 +366,7 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
         <AddProductModal 
           entry={addingProductTo}
           products={products}
+          isPending={isPending}
           onCancel={() => setAddingProductTo(null)}
           onSave={handleSaveAdditionalProducts}
         />
@@ -303,11 +376,32 @@ export function RegistreClient({ entries, rooms, products, currentDate, role }: 
         <CloseEntryModal 
           entry={closingEntry}
           products={products}
+          room={rooms.find(r => r.num === closingEntry.roomNum)}
           currentDate={currentDate}
+          isPending={isPending}
           onCancel={() => setClosingEntry(null)}
           onSave={handleCloseEntry}
+          onSplit={handleSplitEntry}
         />
       )}
+
+      {payingEntry && (() => {
+        const room = rooms.find(r => r.num === payingEntry.roomNum)
+        const condomTotal = payingEntry.products.filter((p: any) => p.product.category === "CONDOM").reduce((s: number, p: any) => s + p.qty * p.price, 0)
+        const drinksTotal = payingEntry.products.filter((p: any) => p.product.category !== "CONDOM").reduce((s: number, p: any) => s + p.qty * p.price, 0)
+        const accrued = room ? computeAccruedAmount(payingEntry.stayType, payingEntry.date, payingEntry.arrival, room) + condomTotal + drinksTotal : 0
+        const paidSoFar = (payingEntry.payments || []).reduce((s: number, p: any) => s + p.amount, 0)
+        return (
+          <RecordPaymentModal
+            entry={payingEntry}
+            accruedAmount={accrued}
+            alreadyPaid={paidSoFar}
+            isPending={isPending}
+            onCancel={() => setPayingEntry(null)}
+            onSave={handleRecordPayment}
+          />
+        )
+      })()}
     </div>
   )
 }

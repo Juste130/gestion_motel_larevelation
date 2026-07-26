@@ -9,6 +9,14 @@ const adapter = new PrismaPg({
 
 const prisma = new PrismaClient({ adapter })
 
+// ⚠️ À AJUSTER avant d'exécuter le script : tarifs réels par type de chambre.
+// V = Ventilée, C = Climée, A = Appart
+const ROOM_RATES: Record<string, { priceHourly: number; priceNightly: number }> = {
+  V: { priceHourly: 1500, priceNightly: 7000 },
+  C: { priceHourly: 3000, priceNightly: 15000 },
+  A: { priceHourly: 4500, priceNightly: 20000 },
+}
+
 /**
  * Crée (ou récupère) un compte en attente d'activation et lui envoie
  * l'e-mail d'invitation — exactement le même flux que inviteUser() côté
@@ -48,40 +56,15 @@ async function main() {
   // Initialiser les chambres par défaut si elles n'existent pas
   const countRooms = await prisma.room.count()
   if (countRooms === 0) {
+    const roomDefs = [
+      ...['01','02','03','04','05','06','07','08','09'].map(num => ({ num, type: 'V', label: 'Ventilée' })),
+      ...['10','11','12','13','14','15','16','17','18','19'].map(num => ({ num, type: 'C', label: 'Climée' })),
+      ...['20','21','22','23','24','25','26','27','28','29'].map(num => ({ num, type: 'A', label: 'Appart' })),
+    ]
     await prisma.room.createMany({
-      data: [
-        { num: '01', type: 'V', label: 'Ventilée' },
-        { num: '02', type: 'V', label: 'Ventilée' },
-        { num: '03', type: 'V', label: 'Ventilée' },
-        { num: '04', type: 'V', label: 'Ventilée' },
-        { num: '05', type: 'V', label: 'Ventilée' },
-        { num: '06', type: 'V', label: 'Ventilée' },
-        { num: '07', type: 'V', label: 'Ventilée' },
-        { num: '08', type: 'V', label: 'Ventilée' },
-        { num: '09', type: 'V', label: 'Ventilée' },
-        { num: '10', type: 'C', label: 'Climée' },
-        { num: '11', type: 'C', label: 'Climée' },
-        { num: '12', type: 'C', label: 'Climée' },
-        { num: '13', type: 'C', label: 'Climée' },
-        { num: '14', type: 'C', label: 'Climée' },
-        { num: '15', type: 'C', label: 'Climée' },
-        { num: '16', type: 'C', label: 'Climée' },
-        { num: '17', type: 'C', label: 'Climée' },
-        { num: '18', type: 'C', label: 'Climée' },
-        { num: '19', type: 'C', label: 'Climée' },
-        { num: '20', type: 'A', label: 'Appart' },
-        { num: '21', type: 'A', label: 'Appart' },
-        { num: '22', type: 'A', label: 'Appart' },
-        { num: '23', type: 'A', label: 'Appart' },
-        { num: '24', type: 'A', label: 'Appart' },
-        { num: '25', type: 'A', label: 'Appart' },
-        { num: '26', type: 'A', label: 'Appart' },
-        { num: '27', type: 'A', label: 'Appart' },
-        { num: '28', type: 'A', label: 'Appart' },
-        { num: '29', type: 'A', label: 'Appart' },
-      ],
+      data: roomDefs.map(r => ({ ...r, ...ROOM_RATES[r.type] })),
     })
-    console.log('Chambres par défaut créées.')
+    console.log('Chambres par défaut créées (tarifs placeholder — à vérifier dans Paramètres).')
   }
 
   // Initialiser les boissons par défaut si elles n'existent pas

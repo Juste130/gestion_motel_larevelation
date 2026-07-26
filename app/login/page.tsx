@@ -2,14 +2,15 @@
 
 import { useState, useEffect, Suspense } from "react"
 import Link from "next/link"
-import { signIn } from "next-auth/react"
+import { signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Lock, Eye, EyeOff, Mail } from "lucide-react"
+import { Lock, Eye, EyeOff, Mail, Loader2 } from "lucide-react"
 import { requestLoginOtp } from "@/app/actions/auth"
 
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { status } = useSession()
 
   const [step, setStep] = useState<"credentials" | "otp">("credentials")
   const [email, setEmail] = useState("")
@@ -19,12 +20,30 @@ function LoginForm() {
   const [error, setError] = useState("")
   const [info, setInfo] = useState("")
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/dashboard")
+    }
+  }, [status, router])
 
   useEffect(() => {
     if (searchParams.get("reason") === "inactivity") {
-      setInfo("Vous avez été déconnecté après 10 minutes d'inactivité.")
+      setInfo("Vous avez été déconnecté après 3 heures d'inactivité.")
     }
   }, [searchParams])
+
+  if (status === "loading" || status === "authenticated") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+          <p className="text-sm font-medium text-zinc-500">Chargement de votre session...</p>
+        </div>
+      </div>
+    )
+  }
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -145,7 +164,12 @@ function LoginForm() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="password" className="text-base font-semibold text-zinc-700">Mot de passe</label>
+                  <div className="flex justify-between items-center">
+                    <label htmlFor="password" className="text-base font-semibold text-zinc-700">Mot de passe</label>
+                    <Link href="/forgot-password" className="text-xs font-semibold text-amber-600 hover:text-amber-700 transition-colors">
+                      Mot de passe oublié ?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <input
                       id="password"
@@ -192,16 +216,32 @@ function LoginForm() {
 
               <button
                 type="button"
-                onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-                className="w-full h-12 rounded-xl border border-zinc-200 flex items-center justify-center gap-3 font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                disabled={loading || googleLoading}
+                onClick={() => {
+                  setGoogleLoading(true)
+                  signIn("google", { callbackUrl: "/dashboard" })
+                }}
+                className="w-full h-12 rounded-xl border border-zinc-200 flex items-center justify-center gap-3 font-semibold text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               >
-                <svg width="18" height="18" viewBox="0 0 18 18">
-                  <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.9c1.7-1.57 2.7-3.87 2.7-6.64z"/>
-                  <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.27c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.34C2.44 15.98 5.48 18 9 18z"/>
-                  <path fill="#FBBC05" d="M3.95 10.69A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.69V4.97H.96A9 9 0 000 9c0 1.45.35 2.83.96 4.03l2.99-2.34z"/>
-                  <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/>
-                </svg>
-                Continuer avec Google
+                {googleLoading ? (
+                  <span className="animate-pulse flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4 text-zinc-600" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Connexion avec Google en cours...
+                  </span>
+                ) : (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 18 18">
+                      <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.9c1.7-1.57 2.7-3.87 2.7-6.64z"/>
+                      <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.27c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.34C2.44 15.98 5.48 18 9 18z"/>
+                      <path fill="#FBBC05" d="M3.95 10.69A5.4 5.4 0 013.68 9c0-.59.1-1.16.27-1.69V4.97H.96A9 9 0 000 9c0 1.45.35 2.83.96 4.03l2.99-2.34z"/>
+                      <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l2.99 2.34C4.66 5.17 6.65 3.58 9 3.58z"/>
+                    </svg>
+                    Continuer avec Google
+                  </>
+                )}
               </button>
             </>
           ) : (

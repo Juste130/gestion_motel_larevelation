@@ -59,7 +59,7 @@ export function FinancesClient({ movements: initMovements, role }: {
       try {
         await addCashMovement({
           label: form.label, amount: parseFloat(form.amount),
-          type: form.type, date: form.date
+          type: form.type
         })
         setForm({ label: "", amount: "", type: "recette", date: todayStr() })
         setShowForm(false)
@@ -210,9 +210,9 @@ export function FinancesClient({ movements: initMovements, role }: {
               <div className="flex flex-col gap-1 w-36">
                 <label className="label-base">Date</label>
                 <input
-                  type="date" value={form.date}
-                  onChange={e => setForm({ ...form, date: e.target.value })}
-                  className="input-base"
+                  type="date" value={form.date} disabled
+                  className="input-base opacity-60 cursor-not-allowed"
+                  title="Toujours la date du jour — les mouvements ne peuvent pas être antidatés"
                 />
               </div>
               <button

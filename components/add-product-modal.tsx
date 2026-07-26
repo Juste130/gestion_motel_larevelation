@@ -1,20 +1,20 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { X, Check, ShoppingCart, Plus, Trash2 } from "lucide-react"
+import { X, Check, ShoppingCart, Plus, Trash2, Loader2 } from "lucide-react"
 import { formatMoney } from "@/lib/utils"
 
-export function AddProductModal({ entry, products, onCancel, onSave }: any) {
+export function AddProductModal({ entry, products, isPending, onCancel, onSave }: any) {
   const [selectedProducts, setSelectedProducts] = useState<any[]>([])
   const [productPick, setProductPick] = useState("")
   const [productQty, setProductQty] = useState(1)
 
   // Raccourci clavier Escape
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel() }
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape" && !isPending) onCancel() }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [onCancel])
+  }, [onCancel, isPending])
 
   const additionalTotal = selectedProducts.reduce((s, d) => s + d.qty * d.price, 0)
 
@@ -37,14 +37,14 @@ export function AddProductModal({ entry, products, onCancel, onSave }: any) {
   }
 
   function submit() {
-    if (selectedProducts.length === 0) return
+    if (selectedProducts.length === 0 || isPending) return
     onSave(selectedProducts)
   }
 
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-4 animate-in fade-in duration-200"
-      onClick={onCancel}
+      onClick={() => !isPending && onCancel()}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -57,7 +57,7 @@ export function AddProductModal({ entry, products, onCancel, onSave }: any) {
             </div>
             <h2 className="font-serif text-xl font-bold text-foreground m-0">Ajouter conso.</h2>
           </div>
-          <button onClick={onCancel} className="text-zinc-400 hover:bg-zinc-100 p-2 rounded-sm transition-colors">
+          <button onClick={onCancel} disabled={isPending} className="text-zinc-400 hover:bg-zinc-100 p-2 rounded-sm transition-colors disabled:opacity-50">
             <X size={18} />
           </button>
         </div>
@@ -68,14 +68,15 @@ export function AddProductModal({ entry, products, onCancel, onSave }: any) {
               value={productPick} 
               onChange={(e) => setProductPick(e.target.value)} 
               className="select-base flex-1"
+              disabled={isPending}
             >
               <option value="">Sélectionner un produit...</option>
               {products.map((d: any) => (
                 <option key={d.id} value={d.id}>{d.name} — {formatMoney(d.price)}</option>
               ))}
             </select>
-            <input type="number" min={1} value={productQty} onChange={(e) => setProductQty(Number(e.target.value))} className="input-base w-16" />
-            <button onClick={addProduct} className="btn-outline h-10 w-10 p-0 flex items-center justify-center flex-shrink-0"><Plus size={16} /></button>
+            <input type="number" min={1} value={productQty} onChange={(e) => setProductQty(Number(e.target.value))} disabled={isPending} className="input-base w-16" />
+            <button onClick={addProduct} disabled={isPending} className="btn-outline h-10 w-10 p-0 flex items-center justify-center flex-shrink-0"><Plus size={16} /></button>
           </div>
 
           {selectedProducts.length > 0 && (
@@ -85,7 +86,7 @@ export function AddProductModal({ entry, products, onCancel, onSave }: any) {
                   <span className="text-sm font-medium">{d.name} <span className="text-zinc-400 font-bold ml-1">x{d.qty}</span></span>
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-sm font-semibold">{formatMoney(d.qty * d.price)}</span>
-                    <button onClick={() => removeProduct(d.id)} className="text-zinc-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-sm">
+                    <button onClick={() => removeProduct(d.id)} disabled={isPending} className="text-zinc-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-sm disabled:opacity-50">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -103,8 +104,16 @@ export function AddProductModal({ entry, products, onCancel, onSave }: any) {
         </div>
 
         <div className="bg-card border-t border-border p-4 rounded-b-md">
-          <button onClick={submit} disabled={selectedProducts.length === 0} className="btn-primary w-full h-11">
-            <Check size={18} className="mr-2" /> Valider l'ajout
+          <button onClick={submit} disabled={selectedProducts.length === 0 || isPending} className="btn-primary w-full h-11">
+            {isPending ? (
+              <span className="flex items-center gap-2">
+                <Loader2 size={18} className="animate-spin" /> Enregistrement en cours...
+              </span>
+            ) : (
+              <>
+                <Check size={18} className="mr-2" /> Valider l'ajout
+              </>
+            )}
           </button>
         </div>
       </div>

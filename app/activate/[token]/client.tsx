@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
 import { Lock, Eye, EyeOff, KeyRound, CheckCircle2, XCircle } from "lucide-react"
-import { activateWithPassword } from "@/app/actions/auth"
+import { activateWithPassword, beginGoogleActivation } from "@/app/actions/auth"
 import { getPasswordHelpText, validatePassword } from "@/lib/password"
 
 type ActivationCheck =
@@ -48,6 +48,19 @@ export function ActivatePageClient({ token, check }: { token: string; check: Act
       return
     }
     setMode("done")
+  }
+
+  const handleGoogleActivation = async () => {
+    setError("")
+    setLoading(true)
+    const res = await beginGoogleActivation(token)
+    if (!res.ok) {
+      setLoading(false)
+      setError(res.error || "Impossible de continuer avec Google.")
+      return
+    }
+    // Le ticket est posé (cookie httpOnly, 5 min) — signIn peut maintenant démarrer l'OAuth Google
+    signIn("google", { callbackUrl: "/dashboard" })
   }
 
   return (
@@ -137,8 +150,9 @@ export function ActivatePageClient({ token, check }: { token: string; check: Act
 
                   <button
                     type="button"
-                    onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-                    className="w-full h-12 rounded-xl border border-zinc-200 flex items-center justify-center gap-3 font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
+                    onClick={handleGoogleActivation}
+                    disabled={loading}
+                    className="w-full h-12 rounded-xl border border-zinc-200 flex items-center justify-center gap-3 font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors disabled:opacity-60"
                   >
                     <svg width="18" height="18" viewBox="0 0 18 18">
                       <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.9c1.7-1.57 2.7-3.87 2.7-6.64z"/>

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react"
 import { signOut, useSession } from "next-auth/react"
 
-const IDLE_LIMIT_MS = 10 * 60 * 1000 // 10 minutes
+const IDLE_LIMIT_MS = 3 * 60 * 60 * 1000 // 3 heures
 const ACTIVITY_EVENTS = ["mousemove", "keydown", "mousedown", "touchstart", "scroll"] as const
 
 export function IdleLogout() {

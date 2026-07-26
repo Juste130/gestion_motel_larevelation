@@ -225,17 +225,17 @@ export function StockPageClient({ products, movements, role }: {
               <div key={date}>
                 <button
                   onClick={() => setExpandedDate(expandedDate === date ? null : date)}
-                  className="w-full flex items-center justify-between px-6 py-3.5 hover:bg-zinc-50 transition-colors text-left"
+                  className="w-full flex flex-wrap items-center justify-between gap-y-1 px-6 py-3.5 hover:bg-zinc-50 transition-colors text-left"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-sm font-semibold text-zinc-700">{date}</span>
-                    <span className="text-xs text-zinc-400">{dayMovements.length} mouvement(s)</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono text-sm font-semibold text-zinc-700 truncate">{date}</span>
+                    <span className="text-xs text-zinc-400 whitespace-nowrap">{dayMovements.length} mouvement(s)</span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-emerald-600 font-semibold">
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-xs text-emerald-600 font-semibold whitespace-nowrap">
                       +{dayMovements.filter(m => m.type === "IN").reduce((s, m) => s + m.qty, 0)} entrées
                     </span>
-                    <span className="text-xs text-rose-500 font-semibold">
+                    <span className="text-xs text-rose-500 font-semibold whitespace-nowrap">
                       -{dayMovements.filter(m => m.type === "OUT").reduce((s, m) => s + m.qty, 0)} sorties
                     </span>
                     {expandedDate === date ? <ChevronUp size={15} className="text-zinc-400" /> : <ChevronDown size={15} className="text-zinc-400" />}

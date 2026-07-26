@@ -21,31 +21,33 @@ model User {
   updatedAt   DateTime @updatedAt
   
   entries        Entry[]
+  payments       Payment[]
   cashMovements  CashMovement[]
   stockMovements StockMovement[]
-  closures       Closure[] @relation("ClosureUser")
   validations    Closure[] @relation("ClosureValidator")
   activationTokens ActivationToken[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 model ActivationToken {
   id         String    @id @default(cuid())
   tokenHash  String    @unique   // sha256 du vrai token, jamais le token en clair en base
   userId     String
-  user       User      @relation(fields: [userId], references: [id])
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 }
 
 model Room {
-  id        String   @id @default(cuid())
-  num       String   @unique
-  type      String   // V (Ventilée), C (Climée), A (Appart)
-  label     String
-  price     Float    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  num          String   @unique
+  type         String   // V (Ventilée), C (Climée), A (Appart)
+  label        String
+  priceHourly  Float    @default(0) // tarif à l'heure
+  priceNightly Float    @default(0) // tarif à la nuitée
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Product {
@@ -67,6 +69,7 @@ model Entry {
   roomNum      String
   roomType     String
   roomTypeLabel String
+  stayType     String   @default("HORAIRE") // HORAIRE | NUITEE
   arrival      String?
   departure    String?
   duration     String?
@@ -75,18 +78,16 @@ model Entry {
   drinksAmount Float    @default(0)
   total        Float    @default(0)
   
-  date         String   // YYYY-MM-DD for easy filtering
+  date         String   // YYYY-MM-DD — jour d'arrivée, pour affichage uniquement
   
   userId       String?
   user         User?    @relation(fields: [userId], references: [id])
-  
-  closureId    String?
-  closure      Closure? @relation(fields: [closureId], references: [id])
 
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   products     EntryProduct[]
+  payments     Payment[]
 }
 
 model EntryProduct {
@@ -101,6 +102,25 @@ model EntryProduct {
   product   Product  @relation(fields: [productId], references: [id])
 }
 
+/// Historique des encaissements réels. Source de vérité des bilans — pas
+/// Entry.total (qui n'est qu'une estimation tant que le séjour n'est pas
+/// soldé). `date` est TOUJOURS fixée par le serveur à la date du jour au
+/// moment de la création (jamais fournie par le client) : c'est ce qui
+/// garantit que les bilans des jours passés ne changent plus jamais.
+model Payment {
+  id        String   @id @default(cuid())
+  amount    Float
+  date      String   // YYYY-MM-DD — jour où l'argent a réellement été pris
+
+  entryId   String
+  entry     Entry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
 model CashMovement {
   id        String   @id @default(cuid())
   label     String
@@ -110,9 +130,6 @@ model CashMovement {
   
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
-
-  closureId String?
-  closure   Closure? @relation(fields: [closureId], references: [id])
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -136,30 +153,31 @@ model StockMovement {
   updatedAt DateTime @updatedAt
 }
 
+/// Bilan GLOBAL (toute l'équipe confondue) pour un jour ou une semaine.
+/// Ne stocke plus les montants calculés au quotidien — ceux-ci sont
+/// toujours recalculés en direct depuis Payment/CashMovement/Entry pour la
+/// date/période demandée (lib/closures.ts). Ce modèle ne conserve que
+/// l'ACTE humain de validation : le montant réellement remis et par qui.
+/// `expectedAmount` est un instantané du montant attendu AU MOMENT de la
+/// validation, à des fins d'audit uniquement (jamais recalculé après coup).
 model Closure {
   id             String   @id @default(cuid())
-  date           String   // YYYY-MM-DD ou 'YYYY-Wxx'
+  date           String   // YYYY-MM-DD (DAILY) ou YYYY-Www (WEEKLY)
   type           String   // 'DAILY' or 'WEEKLY'
-  
-  userId         String
-  user           User     @relation("ClosureUser", fields: [userId], references: [id])
-  
+
   expectedAmount Float
   handedAmount   Float?
   discrepancy    Float?
   comments       String?
   status         String   @default("PENDING") // PENDING, VALIDATED
-  
+
   validatedById  String?
   validatedBy    User?    @relation("ClosureValidator", fields: [validatedById], references: [id])
-  
-  entries        Entry[]
-  cashMovements  CashMovement[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  @@unique([userId, date, type])
+  @@unique([date, type])
 }
 
 model OtpCode {
@@ -167,11 +185,22 @@ model OtpCode {
   email      String
   code       String
   purpose    String    // 'LOGIN' or 'SIGNUP'
+  attempts   Int       @default(0)
   expiresAt  DateTime
   consumedAt DateTime?
   createdAt  DateTime  @default(now())
 
   @@index([email, purpose])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
 }
 
 model AccessRequest {

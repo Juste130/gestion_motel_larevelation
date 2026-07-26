@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "./prisma";
 import { verifyOtp } from "./otp";
+import { consumeGoogleActivationTicket } from "./invitations";
 import 'dotenv/config';
 
 // Extend next-auth types to include role and id
@@ -33,6 +34,7 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
+    maxAge: 24 * 60 * 60, // 24 heures
   },
   pages: {
     signIn: "/login",
@@ -89,8 +91,15 @@ export const authOptions: NextAuthOptions = {
         if (!existing) return false;
 
         // Compte encore en attente d'activation : Google prouve la propriété
-        // de l'e-mail, on active donc directement le compte avec cette méthode.
+        // de l'e-mail, mais ça ne suffit pas — il faut aussi la preuve que
+        // cette tentative vient bien du lien d'invitation (ticket déposé par
+        // beginGoogleActivation() sur la page /activate/[token]). Sans ce
+        // ticket, un simple clic "Continuer avec Google" sur /login avec un
+        // e-mail connu/deviné ne doit PAS activer le compte à sa place.
         if (existing.status === "PENDING") {
+          const authorized = await consumeGoogleActivationTicket(existing.id);
+          if (!authorized) return false;
+
           await prisma.user.update({
             where: { id: existing.id },
             data: { status: "ACTIVE", authMethod: "GOOGLE" },

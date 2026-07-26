@@ -1,23 +1,13 @@
 "use server"
 
 import { prisma } from "@/lib/prisma"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { revalidatePath } from "next/cache"
-
-async function getSessionAndUser() {
-  const session = await getServerSession(authOptions)
-  if (!session) throw new Error("Non autorisé")
-  return session
-}
-
-import { todayStr } from "@/lib/utils"
+import { todayStr, computeDuration } from "@/lib/utils"
+import { getSessionUser } from "@/lib/session"
+import { addEntrySchema, closeEntrySchema, addProductToEntrySchema, splitNuiteeSchema } from "@/lib/validations"
 
 export async function getEntries(date: string) {
-  // date in YYYY-MM-DD
   const today = todayStr()
-  
-  // Si on cherche une date dans le futur, on ne remonte pas les séjours "en cours" du passé.
   const isFuture = date > today
 
   const entries = await prisma.entry.findMany({
@@ -34,6 +24,7 @@ export async function getEntries(date: string) {
       products: {
         include: { product: true }
       },
+      payments: true,
       user: {
         select: { name: true, email: true }
       }
@@ -44,12 +35,12 @@ export async function getEntries(date: string) {
 }
 
 export async function addEntry(data: {
-// ... existing addEntry function logic is untouched ...
   date: string
   receiptNo?: string
   roomNum: string
   roomType: string
   roomTypeLabel: string
+  stayType: "HORAIRE" | "NUITEE"
   arrival?: string
   departure?: string
   duration?: string
@@ -57,21 +48,38 @@ export async function addEntry(data: {
   condomAmount: number
   products: { id: string; qty: number; price: number }[]
 }) {
-  const session = await getSessionAndUser()
-  const userId = (session.user as any)?.id
+  const validated = addEntrySchema.parse(data)
+  const { user } = await getSessionUser()
+  const userId = user.id
 
   const entry = await prisma.$transaction(async (tx) => {
-    const productIds = data.products.map(p => p.id)
+    // Vérification de la disponibilité de la chambre (non occupée)
+    const activeEntry = await tx.entry.findFirst({
+      where: {
+        roomNum: validated.roomNum,
+        departure: null
+      }
+    })
+    if (activeEntry) {
+      throw new Error(`La chambre ${validated.roomNum} est actuellement occupée. Veuillez d'abord clôturer le séjour en cours.`)
+    }
+
+    const productIds = validated.products.map(p => p.id)
     const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
     
     let productsAmount = 0
     const entryProductsData = []
 
-    for (const p of data.products) {
+    for (const p of validated.products) {
       const dbProduct = dbProducts.find(x => x.id === p.id)
       if (!dbProduct) throw new Error("Produit introuvable")
+
+      // VERIFICATION DU STOCK DISPONIBLE (POINT 2 DE L'AUDIT)
+      if (dbProduct.stock < p.qty) {
+        throw new Error(`Stock insuffisant pour "${dbProduct.name}" (Disponible: ${dbProduct.stock}, demandé: ${p.qty})`)
+      }
       
-      const price = dbProduct.price // Prix sécurisé depuis la BDD
+      const price = dbProduct.price
       productsAmount += price * p.qty
       
       entryProductsData.push({
@@ -90,28 +98,29 @@ export async function addEntry(data: {
           type: "OUT",
           qty: p.qty,
           price: price,
-          motif: `Séjour ch. ${data.roomNum}`,
-          date: data.date,
+          motif: `Séjour ch. ${validated.roomNum}`,
+          date: validated.date,
           productId: p.id,
           userId
         }
       })
     }
 
-    const total = data.roomAmount + data.condomAmount + productsAmount
+    const total = validated.roomAmount + validated.condomAmount + productsAmount
 
     const newEntry = await tx.entry.create({
       data: {
-        date: data.date,
-        receiptNo: data.receiptNo,
-        roomNum: data.roomNum,
-        roomType: data.roomType,
-        roomTypeLabel: data.roomTypeLabel,
-        arrival: data.arrival,
-        departure: data.departure,
-        duration: data.duration,
-        roomAmount: data.roomAmount,
-        condomAmount: data.condomAmount,
+        date: validated.date,
+        receiptNo: validated.receiptNo,
+        roomNum: validated.roomNum,
+        roomType: validated.roomType,
+        roomTypeLabel: validated.roomTypeLabel,
+        stayType: validated.stayType,
+        arrival: validated.arrival,
+        departure: validated.departure,
+        duration: validated.duration,
+        roomAmount: validated.roomAmount,
+        condomAmount: validated.condomAmount,
         drinksAmount: productsAmount,
         total,
         userId,
@@ -140,25 +149,32 @@ export async function addEntry(data: {
 export async function closeEntry(entryId: string, data: {
   departure: string;
   duration?: string;
+  stayType: "HORAIRE" | "NUITEE";
   roomAmount: number;
   products: { id: string; qty: number; price: number }[];
   currentDate: string;
 }) {
-  const session = await getSessionAndUser()
-  const userId = (session.user as any)?.id
+  const validated = closeEntrySchema.parse(data)
+  const { user } = await getSessionUser()
+  const userId = user.id
 
   await prisma.$transaction(async (tx) => {
     const entry = await tx.entry.findUnique({ where: { id: entryId } })
     if (!entry) throw new Error("Séjour introuvable")
 
     let additionalAmount = 0
-    if (data.products && data.products.length > 0) {
-      const productIds = data.products.map(p => p.id)
+    if (validated.products && validated.products.length > 0) {
+      const productIds = validated.products.map(p => p.id)
       const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
 
-      for (const p of data.products) {
+      for (const p of validated.products) {
         const dbProduct = dbProducts.find(x => x.id === p.id)
         if (!dbProduct) throw new Error("Produit introuvable")
+
+        // VERIFICATION DU STOCK DISPONIBLE (POINT 2 DE L'AUDIT)
+        if (dbProduct.stock < p.qty) {
+          throw new Error(`Stock insuffisant pour "${dbProduct.name}" (Disponible: ${dbProduct.stock}, demandé: ${p.qty})`)
+        }
         
         const price = dbProduct.price
         additionalAmount += price * p.qty
@@ -194,7 +210,7 @@ export async function closeEntry(entryId: string, data: {
             qty: p.qty,
             price: price,
             motif: `Ajout conso clôture séjour ch. ${entry.roomNum}`,
-            date: data.currentDate,
+            date: validated.currentDate,
             productId: p.id,
             userId
           }
@@ -202,27 +218,41 @@ export async function closeEntry(entryId: string, data: {
       }
     }
 
-    const newRoomAmount = data.roomAmount
+    const newRoomAmount = validated.roomAmount
     const newDrinksAmount = entry.drinksAmount + additionalAmount
     const newTotal = newRoomAmount + entry.condomAmount + newDrinksAmount
 
     await tx.entry.update({
       where: { id: entryId },
       data: {
-        departure: data.departure,
-        duration: data.duration,
+        departure: validated.departure,
+        duration: validated.duration,
+        stayType: validated.stayType,
         roomAmount: newRoomAmount,
         drinksAmount: newDrinksAmount,
         total: newTotal,
-        date: data.currentDate // Mise à jour de la date pour la compta !
       }
     })
+
+    // Solde le séjour : crée un paiement pour le reliquat (total final moins
+    // ce qui avait déjà été réglé en cours de séjour), daté d'aujourd'hui.
+    // C'est ce paiement — pas Entry.total — qui alimente le bilan du jour.
+    const alreadyPaid = await tx.payment.aggregate({
+      where: { entryId },
+      _sum: { amount: true },
+    })
+    const remainder = newTotal - (alreadyPaid._sum.amount || 0)
+    if (remainder !== 0) {
+      await tx.payment.create({
+        data: { entryId, amount: remainder, date: todayStr(), userId },
+      })
+    }
 
     await tx.auditLog.create({
       data: {
         action: 'UPDATE_DEPARTURE',
         entityId: entryId,
-        details: `Clôture: départ ${data.departure}, montant ch. ${newRoomAmount}`,
+        details: `Clôture: départ ${validated.departure}, montant ch. ${newRoomAmount}`,
         userId,
       }
     })
@@ -231,11 +261,41 @@ export async function closeEntry(entryId: string, data: {
   revalidatePath('/dashboard', 'layout')
 }
 
-export async function updateDeparture(entryId: string, departure: string, duration: string) {
-  const session = await getSessionAndUser()
-  const role = (session.user as any)?.role
+/**
+ * Enregistre un paiement partiel pour un séjour encore en cours (le client
+ * règle une consommation ou une avance avant son départ). Le montant est
+ * daté d'aujourd'hui — il compte dans le bilan du jour où il est
+ * effectivement pris, jamais réparti sur les autres jours du séjour.
+ */
+export async function recordPartialPayment(entryId: string, amount: number) {
+  const { user } = await getSessionUser()
+  if (!amount || amount <= 0) throw new Error("Montant invalide.")
 
-  // ANTI-FRAUD RULE: Only DG/ADMIN can update departure directly
+  const entry = await prisma.entry.findUnique({ where: { id: entryId } })
+  if (!entry) throw new Error("Séjour introuvable")
+  if (entry.departure) throw new Error("Ce séjour est déjà clôturé — le solde a déjà été réglé automatiquement.")
+
+  await prisma.$transaction(async (tx) => {
+    await tx.payment.create({
+      data: { entryId, amount, date: todayStr(), userId: user.id },
+    })
+    await tx.auditLog.create({
+      data: {
+        action: 'RECORD_PAYMENT',
+        entityId: entryId,
+        details: `Paiement partiel de ${amount} FCFA enregistré pour le séjour ch. ${entry.roomNum}`,
+        userId: user.id,
+      }
+    })
+  })
+
+  revalidatePath('/dashboard', 'layout')
+}
+
+export async function updateDeparture(entryId: string, departure: string, duration: string) {
+  const { user } = await getSessionUser()
+  const role = user.role
+
   if (role !== "DG" && role !== "ADMIN") {
     throw new Error("Seule la direction peut modifier l'heure de départ.")
   }
@@ -249,17 +309,15 @@ export async function updateDeparture(entryId: string, departure: string, durati
 }
 
 export async function deleteEntry(entryId: string) {
-  const session = await getSessionAndUser()
-  const role = (session.user as any)?.role
-  const userId = (session.user as any)?.id
+  const { user } = await getSessionUser()
+  const role = user.role
+  const userId = user.id
 
-  // ANTI-FRAUD RULE: Only DG/ADMIN can delete
   if (role !== "DG" && role !== "ADMIN") {
     throw new Error("Seule la direction peut supprimer un enregistrement.")
   }
 
   await prisma.$transaction(async (tx) => {
-    // Restore stock before delete
     const entry = await tx.entry.findUnique({
       where: { id: entryId },
       include: { products: true }
@@ -302,21 +360,27 @@ export async function deleteEntry(entryId: string) {
 }
 
 export async function addProductToEntry(entryId: string, date: string, products: { id: string; qty: number; price: number }[]) {
-  const session = await getSessionAndUser()
-  const userId = (session.user as any)?.id
+  const validated = addProductToEntrySchema.parse({ entryId, date, products })
+  const { user } = await getSessionUser()
+  const userId = user.id
 
   await prisma.$transaction(async (tx) => {
     const entry = await tx.entry.findUnique({ where: { id: entryId } })
     if (!entry) throw new Error("Séjour introuvable")
 
-    const productIds = products.map(p => p.id)
+    const productIds = validated.products.map(p => p.id)
     const dbProducts = await tx.product.findMany({ where: { id: { in: productIds } } })
 
     let additionalAmount = 0
 
-    for (const p of products) {
+    for (const p of validated.products) {
       const dbProduct = dbProducts.find(x => x.id === p.id)
       if (!dbProduct) throw new Error("Produit introuvable")
+
+      // VERIFICATION DU STOCK DISPONIBLE (POINT 2 DE L'AUDIT)
+      if (dbProduct.stock < p.qty) {
+        throw new Error(`Stock insuffisant pour "${dbProduct.name}" (Disponible: ${dbProduct.stock}, demandé: ${p.qty})`)
+      }
       
       const price = dbProduct.price
       additionalAmount += price * p.qty
@@ -352,7 +416,7 @@ export async function addProductToEntry(entryId: string, date: string, products:
           qty: p.qty,
           price: price,
           motif: `Ajout conso séjour ch. ${entry.roomNum}`,
-          date: date,
+          date: validated.date,
           productId: p.id,
           userId
         }
@@ -372,6 +436,98 @@ export async function addProductToEntry(entryId: string, date: string, products:
         action: 'UPDATE_ENTRY',
         entityId: entryId,
         details: `Ajout de consommations au séjour ch. ${entry.roomNum}`,
+        userId,
+      }
+    })
+  })
+
+  revalidatePath('/dashboard', 'layout')
+}
+
+/**
+ * Scinde un séjour en NUITEE dont le départ réel dépasse le cutoff de
+ * nuitée en deux séjours distincts :
+ *  1. Le séjour d'origine, clôturé au cutoff (dernière échéance nuitée
+ *     valide — 13h00 le lendemain, ou 24h après l'arrivée si celle-ci a eu
+ *     lieu avant 13h00), facturé nightlyAmount (N nuitées × tarif nuitée).
+ *  2. Un nouveau séjour HORAIRE, même chambre, couvrant du cutoff au départ
+ *     réel, facturé hourlyAmount (heures dépassées × tarif horaire).
+ * Les deux montants restent ceux fournis par la réception (suggérés côté
+ * client, mais éditables — même logique que le reste du montant chambre).
+ */
+export async function splitNuiteeToHoraire(entryId: string, data: {
+  currentDate: string
+  cutoffTime: string
+  actualDeparture: string
+  nightlyAmount: number
+  hourlyAmount: number
+}) {
+  const validated = splitNuiteeSchema.parse(data)
+  const { user } = await getSessionUser()
+  const userId = user.id
+
+  await prisma.$transaction(async (tx) => {
+    const entry = await tx.entry.findUnique({ where: { id: entryId } })
+    if (!entry) throw new Error("Séjour introuvable")
+    if (entry.departure) throw new Error("Ce séjour est déjà clôturé.")
+    if (entry.stayType !== "NUITEE") throw new Error("La scission n'est possible que pour un séjour en nuitée.")
+
+    const cutoffTotal = validated.nightlyAmount + entry.condomAmount + entry.drinksAmount
+
+    await tx.entry.update({
+      where: { id: entryId },
+      data: {
+        departure: validated.cutoffTime,
+        duration: null,
+        roomAmount: validated.nightlyAmount,
+        total: cutoffTotal,
+        // La date reste celle de l'arrivée : la clôture au cutoff n'est pas
+        // le vrai jour de départ, c'est le nouveau séjour horaire qui l'est.
+      }
+    })
+
+    // Solde le séjour nuitée d'origine (reliquat non déjà payé), daté d'aujourd'hui
+    const alreadyPaidOriginal = await tx.payment.aggregate({
+      where: { entryId },
+      _sum: { amount: true },
+    })
+    const remainderOriginal = cutoffTotal - (alreadyPaidOriginal._sum.amount || 0)
+    if (remainderOriginal !== 0) {
+      await tx.payment.create({
+        data: { entryId, amount: remainderOriginal, date: todayStr(), userId },
+      })
+    }
+
+    const hourlyEntry = await tx.entry.create({
+      data: {
+        date: validated.currentDate,
+        roomNum: entry.roomNum,
+        roomType: entry.roomType,
+        roomTypeLabel: entry.roomTypeLabel,
+        stayType: "HORAIRE",
+        arrival: validated.cutoffTime,
+        departure: validated.actualDeparture,
+        duration: computeDuration(validated.cutoffTime, validated.actualDeparture),
+        roomAmount: validated.hourlyAmount,
+        condomAmount: 0,
+        drinksAmount: 0,
+        total: validated.hourlyAmount,
+        userId,
+      }
+    })
+
+    // Le nouveau séjour horaire est créé déjà clôturé : réglé intégralement
+    if (validated.hourlyAmount !== 0) {
+      await tx.payment.create({
+        data: { entryId: hourlyEntry.id, amount: validated.hourlyAmount, date: todayStr(), userId },
+      })
+    }
+
+    await tx.auditLog.create({
+      data: {
+        action: 'SPLIT_STAY',
+        entityId: entryId,
+        details: `Scission ch. ${entry.roomNum} : nuitée clôturée à ${validated.cutoffTime} (${validated.nightlyAmount} FCFA), heures dépassées facturées à l'horaire sur le séjour ${hourlyEntry.id} (${validated.hourlyAmount} FCFA)`,
         userId,
       }
     })

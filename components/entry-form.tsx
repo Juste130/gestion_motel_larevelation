@@ -5,13 +5,21 @@ import { Plus, X, Check, BedDouble, ShoppingCart, Receipt } from "lucide-react"
 import { formatMoney, computeDuration, getBeninTime } from "@/lib/utils"
 import { toast } from "sonner"
 
-export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
+export function EntryForm({ rooms, drinks, date, entries = [], onCancel, onSave }: any) {
   const products = drinks // On renomme en local
+  
+  // Ensemble des numéros de chambres actuellement occupées (séjour non clôturé)
+  const occupiedSet = new Set((entries || []).filter((e: any) => !e.departure).map((e: any) => e.roomNum))
+  
+  // Sélectionner la première chambre disponible par défaut
+  const firstAvailableRoom = rooms.find((r: any) => !occupiedSet.has(r.num)) || rooms[0]
+
   const [receiptNo, setReceiptNo] = useState("")
-  const [roomNum, setRoomNum] = useState(rooms[0]?.num || "")
+  const [roomNum, setRoomNum] = useState(firstAvailableRoom?.num || "")
+  const [stayType, setStayType] = useState<"HORAIRE" | "NUITEE">("HORAIRE")
   const [arrival, setArrival] = useState("")
   const [departure, setDeparture] = useState("")
-  const [roomAmount, setRoomAmount] = useState(rooms[0]?.price?.toString() || "")
+  const [roomAmount, setRoomAmount] = useState(firstAvailableRoom?.priceHourly?.toString() || "")
   const [condomAmount, setCondomAmount] = useState("")
   const [selectedProducts, setSelectedProducts] = useState<any[]>([])
   const [productPick, setProductPick] = useState("")
@@ -61,6 +69,10 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
       toast.error("Veuillez sélectionner une chambre.")
       return
     }
+    if (occupiedSet.has(roomNum)) {
+      toast.error(`La chambre ${roomNum} est actuellement occupée. Veuillez d'abord clôturer le séjour en cours.`)
+      return
+    }
     if (!arrival) {
       toast.error("Veuillez saisir l'heure d'arrivée.")
       return
@@ -84,6 +96,7 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
       roomNum,
       roomType: room?.type,
       roomTypeLabel,
+      stayType,
       arrival,
       departure,
       duration: computeDuration(arrival, departure),
@@ -124,6 +137,24 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
               <BedDouble size={20} className="text-primary" />
               Détails de la chambre
             </h3>
+
+            <div className="flex gap-2 p-1 bg-secondary/60 rounded-md w-fit">
+              <button
+                type="button"
+                onClick={() => { setStayType("HORAIRE"); if (room) setRoomAmount(room.priceHourly.toString()) }}
+                className={`px-4 h-9 rounded-sm text-sm font-semibold transition-colors ${stayType === "HORAIRE" ? "bg-white text-amber-700 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
+              >
+                Horaire
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStayType("NUITEE"); if (room) setRoomAmount(room.priceNightly.toString()) }}
+                className={`px-4 h-9 rounded-sm text-sm font-semibold transition-colors ${stayType === "NUITEE" ? "bg-white text-amber-700 shadow-sm" : "text-zinc-500 hover:text-zinc-700"}`}
+              >
+                Nuitée
+              </button>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 bg-secondary/40 rounded-md border border-border/50">
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">N° de reçu</label>
@@ -137,13 +168,18 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
                     const newNum = e.target.value
                     setRoomNum(newNum)
                     const r = rooms.find((x: any) => x.num === newNum)
-                    if (r && r.price !== undefined) setRoomAmount(r.price.toString())
+                    if (r) setRoomAmount((stayType === "HORAIRE" ? r.priceHourly : r.priceNightly).toString())
                   }} 
                   className={selectClasses}
                 >
-                  {rooms.map((r: any) => (
-                    <option key={r.id} value={r.num}>Ch. {r.num} — {r.label}</option>
-                  ))}
+                  {rooms.map((r: any) => {
+                    const isOccupied = occupiedSet.has(r.num)
+                    return (
+                      <option key={r.id} value={r.num} disabled={isOccupied}>
+                        Ch. {r.num} — {r.label} {isOccupied ? "— (Actuellement occupée)" : ""}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
               
@@ -159,6 +195,9 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">Montant chambre (F CFA)</label>
                 <input type="number" inputMode="numeric" value={roomAmount} onChange={(e) => setRoomAmount(e.target.value)} placeholder="0" className="input-base font-mono font-medium text-amber-700" />
+                <span className="text-[10px] text-zinc-400">
+                  Tarif {stayType === "HORAIRE" ? "horaire" : "nuitée"} catalogue : {room ? formatMoney(stayType === "HORAIRE" ? room.priceHourly : room.priceNightly) : "—"} — modifiable
+                </span>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="label-base">Préservatifs (F CFA)</label>
@@ -173,8 +212,8 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
               Consommations (Produits)
             </h3>
             <div className="p-5 bg-secondary/40 rounded-md border border-border/50">
-              <div className="flex gap-3 items-end">
-                <div className="flex-1 flex flex-col gap-1.5">
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="flex-1 min-w-[140px] flex flex-col gap-1.5">
                   <label className="label-base">Produit</label>
                   <select value={productPick} onChange={(e) => setProductPick(e.target.value)} className={selectClasses}>
                     <option value="">Sélectionner un produit...</option>
@@ -183,11 +222,11 @@ export function EntryForm({ rooms, drinks, date, onCancel, onSave }: any) {
                     ))}
                   </select>
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1.5 w-20 flex-shrink-0">
                   <label className="label-base">Qté</label>
-                  <input type="number" min={1} value={productQty} onChange={(e) => setProductQty(Number(e.target.value))} className="input-base" />
+                  <input type="number" inputMode="numeric" min={1} value={productQty} onChange={(e) => setProductQty(Number(e.target.value))} className="input-base" />
                 </div>
-                <button onClick={addProduct} className="btn-secondary px-4 self-end h-10">
+                <button onClick={addProduct} className="btn-secondary px-4 h-10 flex-shrink-0">
                   <Plus size={18} /> Ajouter
                 </button>
               </div>

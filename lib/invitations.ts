@@ -1,16 +1,17 @@
 import crypto from "crypto"
-import { Resend } from "resend"
+import { cookies } from "next/headers"
 import { prisma } from "./prisma"
+import { sendEmail } from "./mailer"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-const FROM_EMAIL = process.env.OTP_FROM_EMAIL || "onboarding@resend.dev"
 const ACTIVATION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 jours
+const GOOGLE_TICKET_COOKIE = "ga_ticket"
+const GOOGLE_TICKET_TTL_S = 5 * 60 // 5 minutes — le temps de faire l'aller-retour OAuth Google
 
 function baseUrl() {
   return process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 }
 
-function hashToken(token: string) {
+export function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex")
 }
 
@@ -39,8 +40,7 @@ export async function createAndSendActivation(userId: string, name: string | nul
 
   const activationUrl = `${baseUrl()}/activate/${token}`
 
-  await resend.emails.send({
-    from: FROM_EMAIL,
+  await sendEmail({
     to: email,
     subject: "Votre compte La Révélation — Gestion",
     html: `
@@ -86,4 +86,58 @@ export async function consumeActivationToken(token: string) {
     where: { tokenHash, consumedAt: null },
     data: { consumedAt: new Date() },
   })
+}
+
+/**
+ * Étape préalable obligatoire avant de lancer signIn("google") depuis la page
+ * d'activation : revalide le token, puis dépose un cookie httpOnly de courte
+ * durée (5 min) contenant son hash. C'est ce cookie — jamais l'appel Google
+ * en lui-même — qui prouve au callback signIn() de NextAuth que la tentative
+ * vient bien du lien d'invitation, et non d'un simple clic "Google" sur la
+ * page de connexion classique avec un e-mail deviné/connu.
+ */
+export async function issueGoogleActivationTicket(token: string): Promise<ActivationCheck> {
+  const check = await checkActivationToken(token)
+  if (!check.ok) return check
+
+  const jar = await cookies()
+  jar.set(GOOGLE_TICKET_COOKIE, hashToken(token), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: GOOGLE_TICKET_TTL_S,
+    path: "/",
+  })
+  return check
+}
+
+/** Lit (sans le consommer) le ticket déposé par issueGoogleActivationTicket, pour le callback NextAuth */
+export async function readGoogleActivationTicket(): Promise<string | null> {
+  const jar = await cookies()
+  return jar.get(GOOGLE_TICKET_COOKIE)?.value ?? null
+}
+
+/** Supprime le ticket une fois utilisé (succès ou échec) pour empêcher toute réutilisation */
+export async function clearGoogleActivationTicket() {
+  const jar = await cookies()
+  jar.delete(GOOGLE_TICKET_COOKIE)
+}
+
+/**
+ * Valide le ticket contre la base (le hash doit correspondre à un
+ * ActivationToken non consommé, non expiré, appartenant bien à cet
+ * utilisateur) puis le consomme. Utilisé uniquement par le callback signIn().
+ */
+export async function consumeGoogleActivationTicket(userId: string): Promise<boolean> {
+  const ticketHash = await readGoogleActivationTicket()
+  await clearGoogleActivationTicket()
+  if (!ticketHash) return false
+
+  const record = await prisma.activationToken.findUnique({ where: { tokenHash: ticketHash } })
+  if (!record) return false
+  if (record.userId !== userId) return false
+  if (record.consumedAt || record.expiresAt < new Date()) return false
+
+  await prisma.activationToken.update({ where: { id: record.id }, data: { consumedAt: new Date() } })
+  return true
 }
